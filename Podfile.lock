@@ -1,0 +1,46 @@
+PODS:
+  - Alamofire (5.11.1)
+  - CoreXLSX (0.14.1):
+    - XMLCoder (~> 0.11.1)
+    - ZIPFoundation (~> 0.9.11)
+  - KeychainSwift (20.0.0)
+  - Kingfisher (7.12.0)
+  - PullToRefreshKit (0.8.8)
+  - SwiftMessages (9.0.9):
+    - SwiftMessages/App (= 9.0.9)
+  - SwiftMessages/App (9.0.9)
+  - XMLCoder (0.11.1)
+  - ZIPFoundation (0.9.20)
+
+DEPENDENCIES:
+  - Alamofire (~> 5.6)
+  - CoreXLSX (~> 0.14)
+  - KeychainSwift (~> 20.0)
+  - Kingfisher (~> 7.0)
+  - PullToRefreshKit (~> 0.8)
+  - SwiftMessages (~> 9.0)
+
+SPEC REPOS:
+  trunk:
+    - Alamofire
+    - CoreXLSX
+    - KeychainSwift
+    - Kingfisher
+    - PullToRefreshKit
+    - SwiftMessages
+    - XMLCoder
+    - ZIPFoundation
+
+SPEC CHECKSUMS:
+  Alamofire: eec6cd8f73b242b59e34153a606a909eb9864b14
+  CoreXLSX: f9a7a70b509150ceb675b05877b7ac041a587030
+  KeychainSwift: 0ce6a4d13f7228054d1a71bb1b500448fb2ab837
+  Kingfisher: 53a10ea35051a436b5fb626ca2dd8f3144d755e9
+  PullToRefreshKit: 7cc53e720e69f135cffa1a57784dfb534f0222ab
+  SwiftMessages: 1a23aef303fa7bb26ad802880746cf8358e378fe
+  XMLCoder: c4638336674de7ba279cd23f2005817d69f538e0
+  ZIPFoundation: dfd3d681c4053ff7e2f7350bc4e53b5dba3f5351
+
+PODFILE CHECKSUM: ef74a2efb3075a0707e91ded83ed37605726921f
+
+COCOAPODS: 1.16.2

@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D4DEB32009B8125CA4463E7D /* Pods_SBRA_PWA.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AEAF7725C3FE37B7A8F00BAE /* Pods_SBRA_PWA.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		69EFEC4D2F4508550094F19A /* SBRA PWA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SBRA PWA.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AEAF7725C3FE37B7A8F00BAE /* Pods_SBRA_PWA.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SBRA_PWA.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E20BFD9DF1FC45AEA3B925DB /* Pods-SBRA PWA.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SBRA PWA.release.xcconfig"; path = "Target Support Files/Pods-SBRA PWA/Pods-SBRA PWA.release.xcconfig"; sourceTree = "<group>"; };
+		FBA181A420BA39576DB38111 /* Pods-SBRA PWA.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SBRA PWA.debug.xcconfig"; path = "Target Support Files/Pods-SBRA PWA/Pods-SBRA PWA.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,17 +30,37 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4DEB32009B8125CA4463E7D /* Pods_SBRA_PWA.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		3EAF9F53A279A4DBD60B6A64 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AEAF7725C3FE37B7A8F00BAE /* Pods_SBRA_PWA.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		4BBCC236F7AD8DE570744B8A /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				FBA181A420BA39576DB38111 /* Pods-SBRA PWA.debug.xcconfig */,
+				E20BFD9DF1FC45AEA3B925DB /* Pods-SBRA PWA.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		69EFEC442F4508550094F19A = {
 			isa = PBXGroup;
 			children = (
 				69EFEC4F2F4508550094F19A /* SBRA PWA */,
 				69EFEC4E2F4508550094F19A /* Products */,
+				4BBCC236F7AD8DE570744B8A /* Pods */,
+				3EAF9F53A279A4DBD60B6A64 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -52,9 +79,11 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 69EFEC582F4508560094F19A /* Build configuration list for PBXNativeTarget "SBRA PWA" */;
 			buildPhases = (
+				22F28E5C4A51F0C543DEA0EE /* [CP] Check Pods Manifest.lock */,
 				69EFEC492F4508550094F19A /* Sources */,
 				69EFEC4A2F4508550094F19A /* Frameworks */,
 				69EFEC4B2F4508550094F19A /* Resources */,
+				6F9D9AE2468E25877FE16A04 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -64,8 +93,6 @@
 				69EFEC4F2F4508550094F19A /* SBRA PWA */,
 			);
 			name = "SBRA PWA";
-			packageProductDependencies = (
-			);
 			productName = "SBRA PWA";
 			productReference = 69EFEC4D2F4508550094F19A /* SBRA PWA.app */;
 			productType = "com.apple.product-type.application";
@@ -113,6 +140,52 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		22F28E5C4A51F0C543DEA0EE /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SBRA PWA-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		6F9D9AE2468E25877FE16A04 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-SBRA PWA/Pods-SBRA PWA-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			inputPaths = (
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-SBRA PWA/Pods-SBRA PWA-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SBRA PWA/Pods-SBRA PWA-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		69EFEC492F4508550094F19A /* Sources */ = {
@@ -162,7 +235,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -225,7 +298,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -246,14 +319,17 @@
 		};
 		69EFEC592F4508560094F19A /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = FBA181A420BA39576DB38111 /* Pods-SBRA PWA.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T25E5K2WKU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_FILE = "SBRA PWA/AppInfo.plist";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -277,14 +353,17 @@
 		};
 		69EFEC5A2F4508560094F19A /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E20BFD9DF1FC45AEA3B925DB /* Pods-SBRA PWA.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T25E5K2WKU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_FILE = "SBRA PWA/AppInfo.plist";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
