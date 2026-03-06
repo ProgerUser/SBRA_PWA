@@ -1,3 +1,5 @@
+// SBRA PWA/ViewModels/ProcessingViewModel.swift
+
 import Foundation
 import Combine
 import UIKit
@@ -14,6 +16,9 @@ class ProcessingViewModel: ObservableObject {
     @Published var availableGroups: [String] = []
     @Published var cardCount: Int?
     @Published var toastMessage: String?
+    
+    // Добавляем эту переменную для управления file picker из UIKit
+    @Published var showFilePicker = false
     
     let successPublisher = PassthroughSubject<Void, Never>()
     
@@ -56,8 +61,9 @@ class ProcessingViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
+    // ИСПРАВЛЕНО: Теперь показывает file picker
     func selectFile() {
-        // Функция будет вызываться из UIKit
+        showFilePicker = true
     }
     
     func handleSelectedFile(url: URL) {

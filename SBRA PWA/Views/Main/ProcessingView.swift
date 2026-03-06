@@ -1,9 +1,11 @@
 import SwiftUI
 
+// SBRA PWA/Views/Main/ProcessingView.swift - часть с fileImporter
+
 struct ProcessingView: View {
     @StateObject private var viewModel = ProcessingViewModel()
-    @State private var showingFilePicker = false
     @State private var showingProcessingModal = false
+    // Убираем @State private var showingFilePicker = false, так как теперь используем viewModel.showFilePicker
     
     var body: some View {
         NavigationView {
@@ -40,8 +42,9 @@ struct ProcessingView: View {
                     )
                 }
             }
+            // ИСПРАВЛЕНО: Используем viewModel.showFilePicker вместо локальной переменной
             .fileImporter(
-                isPresented: $showingFilePicker,
+                isPresented: $viewModel.showFilePicker,  // ← Изменено здесь
                 allowedContentTypes: [.excel],
                 allowsMultipleSelection: false
             ) { result in
