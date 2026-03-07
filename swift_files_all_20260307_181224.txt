@@ -1,0 +1,5170 @@
+================================================================================
+СБОРКА ВСЕ SWIFT ФАЙЛЫ
+================================================================================
+📅 Дата: 2026-03-07 18:12:24
+📂 Путь проекта: /Users/saidpaculia/Desktop/SBRA_PWA
+📊 Всего файлов: 33
+================================================================================
+
+
+================================================================================
+FILE: SBRA PWA/App/AppDelegate.swift
+================================================================================
+
+import UIKit
+import CoreData
+import UserNotifications
+
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    
+    var window: UIWindow?
+    
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        
+        // Настройка внешнего вида
+        configureAppearance()
+        
+        // Настройка уведомлений для показа в фоновом режиме
+        UNUserNotificationCenter.current().delegate = self
+        
+        return true
+    }
+    
+    private func configureAppearance() {
+        // Настройка навигации
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundColor = UIColor.systemBackground
+        appearance.titleTextAttributes = [.foregroundColor: UIColor.label]
+        
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().compactAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+        UINavigationBar.appearance().tintColor = .systemBlue
+        
+        // Настройка TabBar
+        let tabBarAppearance = UITabBarAppearance()
+        tabBarAppearance.configureWithOpaqueBackground()
+        tabBarAppearance.backgroundColor = .white
+        
+        UITabBar.appearance().standardAppearance = tabBarAppearance
+        if #available(iOS 15.0, *) {
+            UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
+        }
+    }
+    // MARK: UISceneSession Lifecycle
+
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+    }
+
+    func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {
+    }
+    
+    // MARK: - Core Data stack
+    lazy var persistentContainer: NSPersistentContainer = {
+        let container = NSPersistentContainer(name: "OracleProcessor")
+        container.loadPersistentStores { _, error in
+            if let error = error {
+                fatalError("Unresolved error \(error)")
+            }
+        }
+        return container
+    }()
+}
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter, 
+                                willPresent notification: UNNotification, 
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Показывать баннер и воспроизводить звук даже если приложение активно
+        completionHandler([.banner, .sound])
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/App/SceneDelegate.swift
+================================================================================
+
+import UIKit
+import SwiftUI
+
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    
+    var window: UIWindow?
+    private var authViewModel = AuthViewModel()
+    
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard let windowScene = (scene as? UIWindowScene) else { return }
+        
+        // Устанавливаем UIHostingController
+        let window = UIWindow(windowScene: windowScene)
+        window.backgroundColor = .systemBackground
+        
+        // Определяем начальный экран
+        let rootView: any View
+        if authViewModel.isAuthenticated {
+            print("SceneDelegate: Authenticated, showing MainTabView")
+            rootView = MainTabView()
+        } else {
+            print("SceneDelegate: Not authenticated, showing LoginView")
+            rootView = LoginView()
+        }
+        
+        window.rootViewController = UIHostingController(rootView: AnyView(rootView))
+        self.window = window
+        window.makeKeyAndVisible()
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Models/AccountGroup.swift
+================================================================================
+
+import Foundation
+
+struct AccountGroup: Codable, Identifiable {
+    let accNum: String
+    let grpName: String
+    
+    enum CodingKeys: String, CodingKey {
+        case accNum = "acc_num"
+        case grpName = "grp_name"
+    }
+    
+    var id: String { accNum }
+}
+
+struct AccountGroupResponse: Codable {
+    let groups: [AccountGroup]
+    let count: Int
+}
+
+struct AvailableGroupsResponse: Codable {
+    let groups: [String]
+    let count: Int
+}
+
+struct AccountExistsResponse: Codable {
+    let exists: Bool
+    let accNum: String
+    
+    enum CodingKeys: String, CodingKey {
+        case exists
+        case accNum = "acc_num"
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Models/CardActivation.swift
+================================================================================
+
+import Foundation
+
+struct CardActivationResult: Codable {
+    let success: Bool
+    let cardNumber: String
+    let message: String
+    let details: ActivationDetails?
+    let cleanCard: String?
+    let cardId: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case success = "SUCCESS"
+        case cardNumber = "CARD_NUMBER"
+        case message = "MESSAGE"
+        case details = "DETAILS"
+        case cleanCard = "CLEAN_CARD"
+        case cardId = "CARD_ID"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: DecodingAnyKey.self)
+        
+        // Helper to try multiple keys
+        func decodeAny<T: Decodable>(_ type: T.Type, keys: [String]) -> T? {
+            for key in keys {
+                if let val = try? container.decode(T.self, forKey: DecodingAnyKey(stringValue: key)!) {
+                    return val
+                }
+            }
+            return nil
+        }
+        
+        // Success: try SUCCESS, success
+        if let boolSuccess = decodeAny(Bool.self, keys: ["SUCCESS", "success"]) {
+            success = boolSuccess
+        } else if let intSuccess = decodeAny(Int.self, keys: ["SUCCESS", "success"]) {
+            success = intSuccess != 0
+        } else if let stringSuccess = decodeAny(String.self, keys: ["SUCCESS", "success"]) {
+            success = (stringSuccess.lowercased() == "true" || stringSuccess == "1" || stringSuccess.lowercased() == "success")
+        } else {
+            success = false
+        }
+        
+        cardNumber = decodeAny(String.self, keys: ["CARD_NUMBER", "card_number"]) ?? ""
+        message = decodeAny(String.self, keys: ["MESSAGE", "message"]) ?? ""
+        details = decodeAny(ActivationDetails.self, keys: ["DETAILS", "details"])
+        cleanCard = decodeAny(String.self, keys: ["CLEAN_CARD", "clean_card"])
+        cardId = decodeAny(String.self, keys: ["CARD_ID", "card_id"])
+    }
+}
+
+struct ActivationDetails: Codable {
+    let responseCode: String?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: DecodingAnyKey.self)
+        responseCode = try? container.decode(String.self, forKey: DecodingAnyKey(stringValue: "RESPONSE_CODE")!) ?? 
+                       container.decode(String.self, forKey: DecodingAnyKey(stringValue: "response_code")!)
+    }
+}
+
+struct BatchActivationResult: Codable {
+    let total: Int
+    let success: Int
+    let failed: Int
+    let results: [CardActivationResult]
+    
+    enum CodingKeys: String, CodingKey {
+        case total = "TOTAL"
+        case success = "SUCCESS"
+        case failed = "FAILED"
+        case results = "RESULTS"
+    }
+    
+    init(total: Int, success: Int, failed: Int, results: [CardActivationResult]) {
+        self.total = total
+        self.success = success
+        self.failed = failed
+        self.results = results
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: DecodingAnyKey.self)
+        
+        func decodeInt(keys: [String]) -> Int {
+            for key in keys {
+                let anyKey = DecodingAnyKey(stringValue: key)!
+                if let val = try? container.decode(Int.self, forKey: anyKey) { return val }
+                if let str = try? container.decode(String.self, forKey: anyKey), let val = Int(str) { return val }
+            }
+            return 0
+        }
+        
+        total = decodeInt(keys: ["TOTAL", "total"])
+        success = decodeInt(keys: ["SUCCESS", "success"])
+        failed = decodeInt(keys: ["FAILED", "failed"])
+        results = (try? container.decode([CardActivationResult].self, forKey: DecodingAnyKey(stringValue: "RESULTS")!)) ?? 
+                  (try? container.decode([CardActivationResult].self, forKey: DecodingAnyKey(stringValue: "results")!)) ?? []
+    }
+}
+
+// AnyKey helper for dynamic keys
+struct DecodingAnyKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+    
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { self.stringValue = "\(intValue)"; self.intValue = intValue }
+}
+
+struct ActivationHistory: Codable, Identifiable {
+    let id: Int?
+    let cardNumber: String?
+    let cleanCard: String?
+    let cardId: String?
+    let success: Int
+    let message: String?
+    let details: ActivationDetails?
+    let createdAt: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id = "ID"
+        case cardNumber = "CARD_NUMBER"
+        case cleanCard = "CLEAN_CARD"
+        case cardId = "CARD_ID"
+        case success = "SUCCESS"
+        case message = "MESSAGE"
+        case details = "DETAILS"
+        case createdAt = "CREATED_AT"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: DecodingAnyKey.self)
+        
+        func decodeAny<T: Decodable>(_ type: T.Type, keys: [String]) -> T? {
+            for key in keys {
+                if let val = try? container.decode(T.self, forKey: DecodingAnyKey(stringValue: key)!) {
+                    return val
+                }
+            }
+            return nil
+        }
+        
+        // ID
+        if let intId = decodeAny(Int.self, keys: ["ID", "id"]) {
+            id = intId
+        } else if let stringId = decodeAny(String.self, keys: ["ID", "id"]), let intId = Int(stringId) {
+            id = intId
+        } else {
+            id = nil
+        }
+        
+        cardNumber = decodeAny(String.self, keys: ["CARD_NUMBER", "card_number"])
+        cleanCard = decodeAny(String.self, keys: ["CLEAN_CARD", "clean_card"])
+        cardId = decodeAny(String.self, keys: ["CARD_ID", "card_id"])
+        
+        // Success
+        if let intSuccess = decodeAny(Int.self, keys: ["SUCCESS", "success"]) {
+            success = intSuccess
+        } else if let stringSuccess = decodeAny(String.self, keys: ["SUCCESS", "success"]), let intSuccess = Int(stringSuccess) {
+            success = intSuccess
+        } else {
+            success = 0
+        }
+        
+        message = decodeAny(String.self, keys: ["MESSAGE", "message"])
+        details = decodeAny(ActivationDetails.self, keys: ["DETAILS", "details"])
+        createdAt = decodeAny(String.self, keys: ["CREATED_AT", "created_at"]) ?? ""
+    }
+    
+    var idValue: String { "\(id ?? 0)-\(createdAt)" }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Models/Processing.swift
+================================================================================
+
+import Foundation
+
+struct AvailableProcessing: Codable, Identifiable {
+    let code: String
+    let name: String
+    let description: String?
+    
+    var id: String { code }
+}
+
+struct ProcessingRequest: Codable {
+    let processingType: String
+    let parameters: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case processingType = "processing_type"
+        case parameters
+    }
+}
+
+struct ProcessingResult: Codable {
+    let taskId: String
+    let status: String
+    let resultsCount: Int?
+    let filename: String?
+    let error: String?
+    let createdAt: String?
+    let completedAt: String?
+    let message: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case taskId = "TASK_ID"
+        case taskId_snake = "task_id"
+        case status = "STATUS"
+        case status_snake = "status"
+        case resultsCount = "RESULTS_COUNT"
+        case resultsCount_snake = "results_count"
+        case filename = "FILENAME"
+        case filename_snake = "filename"
+        case error = "ERROR"
+        case error_snake = "error"
+        case createdAt = "CREATED_AT"
+        case createdAt_snake = "created_at"
+        case completedAt = "COMPLETED_AT"
+        case completedAt_snake = "completed_at"
+        case message
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try TASK_ID then task_id
+        if let id = try? container.decode(String.self, forKey: .taskId) {
+            taskId = id
+        } else {
+            taskId = try container.decode(String.self, forKey: .taskId_snake)
+        }
+        
+        // Try STATUS then status
+        if let s = try? container.decode(String.self, forKey: .status) {
+            status = s
+        } else {
+            status = try container.decode(String.self, forKey: .status_snake)
+        }
+        
+        resultsCount = (try? container.decodeIfPresent(Int.self, forKey: .resultsCount)) ?? (try? container.decodeIfPresent(Int.self, forKey: .resultsCount_snake))
+        filename = (try? container.decodeIfPresent(String.self, forKey: .filename)) ?? (try? container.decodeIfPresent(String.self, forKey: .filename_snake))
+        error = (try? container.decodeIfPresent(String.self, forKey: .error)) ?? (try? container.decodeIfPresent(String.self, forKey: .error_snake))
+        createdAt = (try? container.decodeIfPresent(String.self, forKey: .createdAt)) ?? (try? container.decodeIfPresent(String.self, forKey: .createdAt_snake))
+        completedAt = (try? container.decodeIfPresent(String.self, forKey: .completedAt)) ?? (try? container.decodeIfPresent(String.self, forKey: .completedAt_snake))
+        message = try? container.decodeIfPresent(String.self, forKey: .message)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(taskId, forKey: .taskId)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(resultsCount, forKey: .resultsCount)
+        try container.encodeIfPresent(filename, forKey: .filename)
+        try container.encodeIfPresent(error, forKey: .error)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(completedAt, forKey: .completedAt)
+        try container.encodeIfPresent(message, forKey: .message)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Models/Report.swift
+================================================================================
+
+import Foundation
+
+struct ReportInfo: Codable, Identifiable {
+    let filename: String
+    let size: Int
+    let created: String
+    let modified: String
+    
+    var id: String { filename }
+    
+    var formattedSize: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(size))
+    }
+    
+    var formattedDate: String {
+        let dateFormatter = ISO8601DateFormatter()
+        guard let date = dateFormatter.date(from: created) else { return created }
+        
+        let outputFormatter = DateFormatter()
+        outputFormatter.dateStyle = .medium
+        outputFormatter.timeStyle = .short
+        outputFormatter.locale = Locale(identifier: "ru_RU")
+        return outputFormatter.string(from: date)
+    }
+}
+
+// MARK: - Generic API Response Types
+
+struct UploadResponse: Codable {
+    let message: String
+    let filename: String?
+    let count: Int?
+}
+
+struct CountResponse: Codable {
+    let count: Int
+}
+
+struct MessageResponse: Codable {
+    let message: String
+}
+
+// MARK: - White List
+
+struct WhiteListCard: Codable, Identifiable {
+    let cardNum: String
+    let typeCon: String
+    let createdAt: String?
+    
+    var id: String { cardNum }
+    
+    enum CodingKeys: String, CodingKey {
+        case cardNum = "CARD_NUM"
+        case typeCon = "TYPE_CON"
+        case createdAt = "CREATED_AT"
+    }
+}
+
+struct WhiteListResponse: Codable {
+    let success: Bool
+    let cards: [WhiteListCard]
+    let count: Int
+}
+
+// MARK: - Balance Report
+
+struct BalanceReportItem: Codable, Identifiable {
+    let type: String
+    let groupName: String
+    let rest: Double
+    
+    var id: String { "\(type)-\(groupName)" }
+    
+    enum CodingKeys: String, CodingKey {
+        case type = "TYPE"
+        case groupName = "GROUP_NAME"
+        case rest = "REST"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        groupName = try container.decode(String.self, forKey: .groupName)
+        
+        if let doubleValue = try? container.decode(Double.self, forKey: .rest) {
+            rest = doubleValue
+        } else if let stringValue = try? container.decode(String.self, forKey: .rest),
+                  let doubleValue = Double(stringValue) {
+            rest = doubleValue
+        } else {
+            rest = 0.0 // Default value or throw error if preferred
+        }
+    }
+    
+    var formattedRest: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.groupingSeparator = " "
+        return formatter.string(from: NSNumber(value: rest)) ?? "\(rest)"
+    }
+}
+
+struct BalanceReportSummary: Codable {
+    let totalCards: Double
+    let totalAccounts: Double
+    let totalSum: Double
+    let recordsCount: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case totalCards = "total_cards"
+        case totalAccounts = "total_accounts"
+        case totalSum = "total_sum"
+        case recordsCount = "records_count"
+    }
+}
+
+struct BalanceReportDetailedResponse: Codable {
+    let data: [BalanceReportItem]
+    let summary: BalanceReportSummary
+    let generatedAt: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case data
+        case summary
+        case generatedAt = "generated_at"
+    }
+}
+
+// MARK: - History Item
+
+struct HistoryItem: Codable, Identifiable {
+    let operDate: String
+    let groupType: String
+    let cardNum: String
+    let accountNum: String?
+    let paymentSum: Double
+    let errorText: String?
+    
+    var id: String { "\(operDate)-\(cardNum)-\(paymentSum)" }
+    
+    enum CodingKeys: String, CodingKey {
+        case operDate = "OPERDATE"
+        case groupType = "GROUP_TYPE"
+        case cardNum = "CARDNUM"
+        case accountNum = "ACCOUNT_NUM"
+        case paymentSum = "PAYMENT_SUM"
+        case errorText = "ERROR_TEXT"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        operDate = try container.decode(String.self, forKey: .operDate)
+        groupType = try container.decode(String.self, forKey: .groupType)
+        cardNum = try container.decode(String.self, forKey: .cardNum)
+        accountNum = try container.decodeIfPresent(String.self, forKey: .accountNum)
+        errorText = try container.decodeIfPresent(String.self, forKey: .errorText)
+        
+        if let doubleValue = try? container.decode(Double.self, forKey: .paymentSum) {
+            paymentSum = doubleValue
+        } else if let stringValue = try? container.decode(String.self, forKey: .paymentSum),
+                  let doubleValue = Double(stringValue) {
+            paymentSum = doubleValue
+        } else {
+            paymentSum = 0.0
+        }
+    }
+    
+    var formattedDate: String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: operDate) else { return operDate }
+        
+        let outputFormatter = DateFormatter()
+        outputFormatter.dateStyle = .medium
+        outputFormatter.timeStyle = .short
+        outputFormatter.locale = Locale(identifier: "ru_RU")
+        return outputFormatter.string(from: date)
+    }
+    
+    var formattedSum: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.groupingSeparator = " "
+        formatter.decimalSeparator = "."
+        return formatter.string(from: NSNumber(value: paymentSum)) ?? "\(paymentSum)"
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Models/Task.swift
+================================================================================
+
+import Foundation
+
+struct ProcessingTask: Codable, Identifiable {
+    let taskId: String
+    let processingType: String
+    let parameters: String?
+    let status: TaskStatus
+    let createdAt: String
+    let createdBy: String
+    let completedAt: String?
+    let resultsCount: Int?
+    let filename: String?
+    let errorMessage: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case taskId = "TASK_ID"
+        case processingType = "PROCESSING_TYPE"
+        case parameters = "PARAMETERS"
+        case status = "STATUS"
+        case createdAt = "CREATED_AT"
+        case createdBy = "CREATED_BY"
+        case completedAt = "COMPLETED_AT"
+        case resultsCount = "RESULTS_COUNT"
+        case filename = "FILENAME"
+        case errorMessage = "ERROR_MESSAGE"
+    }
+    
+    var id: String { taskId }
+}
+
+enum TaskStatus: String, Codable {
+    case pending = "pending"
+    case running = "running"
+    case completed = "completed"
+    case error = "error"
+    
+    var displayName: String {
+        switch self {
+        case .pending: return "Ожидание"
+        case .running: return "Выполняется"
+        case .completed: return "Завершено"
+        case .error: return "Ошибка"
+        }
+    }
+    
+    var color: String {
+        switch self {
+        case .pending: return "warning"
+        case .running: return "info"
+        case .completed: return "success"
+        case .error: return "danger"
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Models/User.swift
+================================================================================
+
+import Foundation
+
+struct User: Codable {
+    let username: String
+    let disabled: Bool?
+}
+
+struct UserInDB: Codable {
+    let username: String
+    let hashedPassword: String
+    let disabled: Bool
+}
+
+struct Token: Codable {
+    let accessToken: String
+    let tokenType: String
+    
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType = "token_type"
+    }
+}
+
+struct TokenData {
+    let username: String
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Services/APIError.swift
+================================================================================
+
+import Foundation
+import Combine
+
+// MARK: - Error Types
+
+enum APIError: Error {
+    case invalidURL
+    case noData
+    case decodingError
+    case encodingError
+    case networkError(Error)
+    case serverError(Int, String?)
+    case unauthorized
+    case unknown
+    
+    var localizedDescription: String {
+        switch self {
+        case .invalidURL:
+            return "Неверный URL"
+        case .noData:
+            return "Нет данных от сервера"
+        case .decodingError:
+            return "Ошибка декодирования данных"
+        case .encodingError:
+            return "Ошибка кодирования данных"
+        case .networkError(let error):
+            return "Ошибка сети: \(error.localizedDescription)"
+        case .serverError(let code, let message):
+            return "Ошибка сервера (\(code)): \(message ?? "Неизвестная ошибка")"
+        case .unauthorized:
+            return "Не авторизован"
+        case .unknown:
+            return "Неизвестная ошибка"
+        }
+    }
+}
+
+// MARK: - APIService
+
+class APIService: NSObject, URLSessionDelegate {
+    static let shared = APIService()
+    static let unauthorizedNotification = Notification.Name("APIServiceUnauthorized")
+    private let baseURL = "https://10.111.170.74:5500" // Замените на ваш URL
+    
+    private var session: URLSession!
+    private var cancellables = Set<AnyCancellable>()
+    
+    func downloadFile(request: URLRequest, completion: @escaping (URL?, URLResponse?, Error?) -> Void) {
+        let task = session.downloadTask(with: request, completionHandler: completion)
+        task.resume()
+    }
+    
+    override private init() {
+        super.init()
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 300
+        self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+    }
+    
+    // MARK: - SSL Bypass
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            if let serverTrust = challenge.protectionSpace.serverTrust {
+                completionHandler(.useCredential, URLCredential(trust: serverTrust))
+                return
+            }
+        }
+        completionHandler(.performDefaultHandling, nil)
+    }
+    
+    // MARK: - Authentication
+    
+    func login(username: String, password: String) -> AnyPublisher<Token, APIError> {
+        guard let url = URL(string: "\(baseURL)/token") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        let body = "username=\(username)&password=\(password)"
+        request.httpBody = body.data(using: .utf8)
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<Token, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: Token.self, decoder: JSONDecoder())
+                    .mapError { _ in APIError.decodingError }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func createRequest(_ path: String, method: String = "GET", body: Data? = nil) -> URLRequest? {
+        guard let url = URL(string: "\(baseURL)\(path)") else { return nil }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        if let body = body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        
+        return request
+    }
+    
+    func getExportHistoryExcelURL(groupName: String? = nil, startDate: String? = nil, endDate: String? = nil, daysBack: Int = 7) -> URL? {
+        var components = URLComponents(string: "\(baseURL)/export-history-excel")
+        var queryItems = [URLQueryItem(name: "days_back", value: "\(daysBack)")]
+        if let groupName = groupName { queryItems.append(URLQueryItem(name: "group_name", value: groupName)) }
+        if let startDate = startDate { queryItems.append(URLQueryItem(name: "start_date", value: startDate)) }
+        if let endDate = endDate { queryItems.append(URLQueryItem(name: "end_date", value: endDate)) }
+        components?.queryItems = queryItems
+        return components?.url
+    }
+    
+    func getExportBalanceReportExcelURL() -> URL? {
+        return URL(string: "\(baseURL)/export-balance-report-excel")
+    }
+    
+    private func performRequest<T: Decodable>(_ request: URLRequest) -> AnyPublisher<T, APIError> {
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<T, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: T.self, decoder: JSONDecoder())
+                    .mapError { error in
+                        if let jsonString = String(data: data, encoding: .utf8) {
+                            print("Decoding error: \(error)")
+                            print("Raw JSON response: \(jsonString)")
+                        }
+                        return APIError.decodingError
+                    }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    // MARK: - Ruslan / Groups
+    
+    func getAvailableGroups() -> AnyPublisher<[String], APIError> {
+        guard let request = createRequest("/available-groups") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+            .map { (response: AvailableGroupsResponse) -> [String] in
+                return response.groups
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func uploadRuslanFile(fileData: Data, fileName: String) -> AnyPublisher<UploadResponse, APIError> {
+        let boundary = UUID().uuidString
+        guard let url = URL(string: "\(baseURL)/upload-excel-file") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<UploadResponse, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: UploadResponse.self, decoder: JSONDecoder())
+                    .mapError { _ in APIError.decodingError }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func getRuslanCardCount() -> AnyPublisher<Int, APIError> {
+        guard let request = createRequest("/ruslan-card-count") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+            .map { (response: CountResponse) -> Int in
+                return response.count
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    // MARK: - Processings
+    
+    func getAvailableProcessings() -> AnyPublisher<[AvailableProcessing], APIError> {
+        guard let request = createRequest("/available-processings") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    func executeProcessing(_ request: ProcessingRequest) -> AnyPublisher<ProcessingResult, APIError> {
+        guard let body = try? JSONEncoder().encode(request),
+              let urlRequest = createRequest("/execute-processing", method: "POST", body: body) else {
+            return Fail(error: APIError.encodingError).eraseToAnyPublisher()
+        }
+        
+        return performRequest(urlRequest)
+    }
+    
+    // MARK: - Tasks
+    
+    func getUserTasks() -> AnyPublisher<[ProcessingTask], APIError> {
+        guard let request = createRequest("/user-tasks") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+            .map { (response: [String: [ProcessingTask]]) -> [ProcessingTask] in
+                return response["tasks"] ?? []
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func getTaskStatus(taskId: String) -> AnyPublisher<ProcessingTask, APIError> {
+        guard let request = createRequest("/task-status/\(taskId)") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    // MARK: - History
+    
+    func getProcessingHistory(groupName: String? = nil, startDate: String? = nil, endDate: String? = nil, daysBack: Int = 7) -> AnyPublisher<[HistoryItem], APIError> {
+        var components = URLComponents(string: "\(baseURL)/processing-history")
+        var queryItems: [URLQueryItem] = []
+        
+        if let groupName = groupName {
+            queryItems.append(URLQueryItem(name: "group_name", value: groupName))
+        }
+        if let startDate = startDate {
+            queryItems.append(URLQueryItem(name: "start_date", value: startDate))
+        }
+        if let endDate = endDate {
+            queryItems.append(URLQueryItem(name: "end_date", value: endDate))
+        }
+        if startDate == nil && endDate == nil {
+            queryItems.append(URLQueryItem(name: "days_back", value: "\(daysBack)"))
+        }
+        
+        components?.queryItems = queryItems.isEmpty ? nil : queryItems
+        
+        guard let url = components?.url else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<[HistoryItem], APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let dataArray = json["data"] {
+                        let historyJson = try JSONSerialization.data(withJSONObject: dataArray)
+                        let decoder = JSONDecoder()
+                        let items = try decoder.decode([HistoryItem].self, from: historyJson)
+                        return Just(items).setFailureType(to: APIError.self).eraseToAnyPublisher()
+                    } else if let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                        let historyJson = try JSONSerialization.data(withJSONObject: jsonArray)
+                        let decoder = JSONDecoder()
+                        let items = try decoder.decode([HistoryItem].self, from: historyJson)
+                        return Just(items).setFailureType(to: APIError.self).eraseToAnyPublisher()
+                    } else {
+                        return Fail(error: APIError.decodingError).eraseToAnyPublisher()
+                    }
+                } catch {
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                        print("History decoding error: \(error)")
+                        print("Raw JSON response: \(jsonString)")
+                    }
+                    return Fail(error: APIError.decodingError).eraseToAnyPublisher()
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    // MARK: - Account Groups
+    
+    func getAccountGroups() -> AnyPublisher<[AccountGroup], APIError> {
+        guard let request = createRequest("/account-groups") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+            .map { (response: AccountGroupResponse) -> [AccountGroup] in
+                return response.groups
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func createAccountGroup(accNum: String, grpName: String) -> AnyPublisher<AccountGroup, APIError> {
+        let body: [String: Any] = ["acc_num": accNum, "grp_name": grpName]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body),
+              let request = createRequest("/account-groups", method: "POST", body: jsonData) else {
+            return Fail(error: APIError.encodingError).eraseToAnyPublisher()
+        }
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<AccountGroup, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: AccountGroup.self, decoder: JSONDecoder())
+                    .mapError { _ in APIError.decodingError }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func updateAccountGroup(accNum: String, newAccNum: String, grpName: String) -> AnyPublisher<AccountGroup, APIError> {
+        let body: [String: Any] = ["acc_num": newAccNum, "grp_name": grpName]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body),
+              let request = createRequest("/account-groups/\(accNum)", method: "PUT", body: jsonData) else {
+            return Fail(error: APIError.encodingError).eraseToAnyPublisher()
+        }
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<AccountGroup, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: AccountGroup.self, decoder: JSONDecoder())
+                    .mapError { _ in APIError.decodingError }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func deleteAccountGroup(accNum: String) -> AnyPublisher<MessageResponse, APIError> {
+        guard let request = createRequest("/account-groups/\(accNum)", method: "DELETE") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    // MARK: - Balance Report
+    
+    func getBalanceReport() -> AnyPublisher<[BalanceReportItem], APIError> {
+        guard let request = createRequest("/balance-report") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<[BalanceReportItem], APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let dataArray = json["data"] {
+                        let reportJson = try JSONSerialization.data(withJSONObject: dataArray)
+                        let decoder = JSONDecoder()
+                        let items = try decoder.decode([BalanceReportItem].self, from: reportJson)
+                        return Just(items).setFailureType(to: APIError.self).eraseToAnyPublisher()
+                    } else {
+                        print("Balance report: 'data' key not found in response")
+                        return Fail(error: APIError.decodingError).eraseToAnyPublisher()
+                    }
+                } catch {
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                        print("Balance report decoding error: \(error)")
+                        print("Raw JSON response: \(jsonString)")
+                    }
+                    return Fail(error: APIError.decodingError).eraseToAnyPublisher()
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func getDetailedBalanceReport() -> AnyPublisher<BalanceReportDetailedResponse, APIError> {
+        guard let request = createRequest("/balance-report/detailed") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    func getBalanceReportByGroup(groupName: String) -> AnyPublisher<[BalanceReportItem], APIError> {
+        guard let request = createRequest("/balance-report/group/\(groupName)") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    // MARK: - White List Management
+    
+    func getWhiteListCards() -> AnyPublisher<[WhiteListCard], APIError> {
+        guard let request = createRequest("/white-list-cards") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+            .map { (response: WhiteListResponse) -> [WhiteListCard] in
+                return response.cards
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func addSingleCardToWhiteList(cardNum: String, typeCon: String) -> AnyPublisher<MessageResponse, APIError> {
+        let body: [String: Any] = ["card_num": cardNum, "group_name": typeCon]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body),
+              let request = createRequest("/add-single-card-to-white-list", method: "POST", body: jsonData) else {
+            return Fail(error: APIError.encodingError).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    func addCardsToWhiteList(fileData: Data, fileName: String) -> AnyPublisher<UploadResponse, APIError> {
+        let boundary = UUID().uuidString
+        guard let url = URL(string: "\(baseURL)/add-cards-to-white-list") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<UploadResponse, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                if !(200...299).contains(httpResponse.statusCode) {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: UploadResponse.self, decoder: JSONDecoder())
+                    .mapError { _ in APIError.decodingError }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func deleteWhiteListCard(cardNum: String) -> AnyPublisher<MessageResponse, APIError> {
+        guard let request = createRequest("/white-list-cards/\(cardNum)", method: "DELETE") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    func clearWhiteListByGroup(groupName: String) -> AnyPublisher<MessageResponse, APIError> {
+        guard let request = createRequest("/white-list-cards/clear-by-group/\(groupName)", method: "DELETE") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+    
+    // MARK: - Card Activation (Continued)
+    
+    func activateSingleCard(cardNumber: String) -> AnyPublisher<CardActivationResult, APIError> {
+        guard let url = URL(string: "\(baseURL)/activate-card") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        let body = "card_number=\(cardNumber)"
+        request.httpBody = body.data(using: .utf8)
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<CardActivationResult, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: CardActivationResult.self, decoder: JSONDecoder())
+                    .mapError { error in
+                        if let jsonString = String(data: data, encoding: .utf8) {
+                            print("Single Activation Decoding error: \(error)")
+                            print("Raw JSON response: \(jsonString)")
+                        }
+                        return APIError.decodingError
+                    }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func uploadActivationFile(fileData: Data, fileName: String) -> AnyPublisher<BatchActivationResult, APIError> {
+        let boundary = UUID().uuidString
+        guard let url = URL(string: "\(baseURL)/activate-cards-excel") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<BatchActivationResult, APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                return Just(data)
+                    .decode(type: BatchActivationResult.self, decoder: JSONDecoder())
+                    .mapError { error in
+                        if let jsonString = String(data: data, encoding: .utf8) {
+                            print("Batch Activation Decoding error: \(error)")
+                            print("Raw JSON response: \(jsonString)")
+                        }
+                        return APIError.decodingError
+                    }
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func getActivationHistory(startDate: String? = nil, endDate: String? = nil, limit: Int = 1000) -> AnyPublisher<[ActivationHistory], APIError> {
+        var components = URLComponents(string: "\(baseURL)/activation-history")
+        var queryItems: [URLQueryItem] = []
+        
+        if let startDate = startDate {
+            queryItems.append(URLQueryItem(name: "start_date", value: startDate))
+        }
+        if let endDate = endDate {
+            queryItems.append(URLQueryItem(name: "end_date", value: endDate))
+        }
+        queryItems.append(URLQueryItem(name: "limit", value: "\(limit)"))
+        
+        components?.queryItems = queryItems
+        
+        guard let url = components?.url else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        return session.dataTaskPublisher(for: request)
+            .mapError { APIError.networkError($0) }
+            .flatMap { data, response -> AnyPublisher<[ActivationHistory], APIError> in
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return Fail(error: APIError.unknown).eraseToAnyPublisher()
+                }
+                
+                if httpResponse.statusCode == 401 {
+                    NotificationCenter.default.post(name: APIService.unauthorizedNotification, object: nil)
+                    return Fail(error: APIError.unauthorized).eraseToAnyPublisher()
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = String(data: data, encoding: .utf8)
+                    return Fail(error: APIError.serverError(httpResponse.statusCode, message)).eraseToAnyPublisher()
+                }
+                
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let historyData = json["history"] {
+                        let historyJson = try JSONSerialization.data(withJSONObject: historyData)
+                        let decoder = JSONDecoder()
+                        let items = try decoder.decode([ActivationHistory].self, from: historyJson)
+                        return Just(items).setFailureType(to: APIError.self).eraseToAnyPublisher()
+                    } else {
+                        return Fail(error: APIError.decodingError).eraseToAnyPublisher()
+                    }
+                } catch {
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                        print("Activation history decoding error: \(error)")
+                        print("Raw JSON response: \(jsonString)")
+                    }
+                    return Fail(error: APIError.decodingError).eraseToAnyPublisher()
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    func clearActivationHistory() -> AnyPublisher<MessageResponse, APIError> {
+        guard let request = createRequest("/activation-history/clear", method: "DELETE") else {
+            return Fail(error: APIError.invalidURL).eraseToAnyPublisher()
+        }
+        
+        return performRequest(request)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Services/TokenManager.swift
+================================================================================
+
+import Foundation
+import KeychainSwift
+
+class TokenManager {
+    static let shared = TokenManager()
+    private let keychain = KeychainSwift()
+    private let tokenKey = "auth_token"
+    private let usernameKey = "username"
+    
+    private init() {}
+    
+    func saveToken(_ token: String, username: String) {
+        keychain.set(token, forKey: tokenKey)
+        keychain.set(username, forKey: usernameKey)
+    }
+    
+    func getToken() -> String? {
+        return keychain.get(tokenKey)
+    }
+    
+    func getUsername() -> String? {
+        return keychain.get(usernameKey)
+    }
+    
+    func clearToken() {
+        keychain.delete(tokenKey)
+        keychain.delete(usernameKey)
+    }
+    
+    var isAuthenticated: Bool {
+        return getToken() != nil
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Utils/Constants.swift
+================================================================================
+
+import Foundation
+
+struct Constants {
+    static let baseURL = "https://10.111.170.74:5500" // Замените на ваш URL
+    
+    struct API {
+        static let token = "/token"
+        static let availableProcessings = "/available-processings"
+        static let executeProcessing = "/execute-processing"
+        static let userTasks = "/user-tasks"
+        static let taskStatus = "/task-status"
+        static let reports = "/reports"
+        static let downloadReport = "/download-report"
+        static let processingHistory = "/processing-history"
+        static let availableGroups = "/available-groups"
+        static let accountGroups = "/account-groups"
+        static let checkAccountExists = "/check-account-exists"
+        static let uploadExcel = "/upload-excel-file"
+        static let ruslanCardCount = "/ruslan-card-count"
+        static let balanceReport = "/balance-report"
+        static let activateCard = "/activate-card"
+        static let activateCardsExcel = "/activate-cards-excel"
+        static let activationHistory = "/activation-history"
+        static let clearActivationHistory = "/activation-history/clear"
+        static let health = "/health"
+    }
+    
+    struct UserDefaults {
+        static let username = "username"
+    }
+    
+    struct Notifications {
+        static let sessionExpired = "sessionExpired"
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Utils/Extensions.swift
+================================================================================
+
+import Foundation
+import SwiftUI
+import UniformTypeIdentifiers
+
+extension URL {
+    var fileSize: Int64 {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else { return 0 }
+        return attributes[.size] as? Int64 ?? 0
+    }
+}
+
+extension UTType {
+    static let excel = UTType(filenameExtension: "xlsx") ?? UTType.data
+}
+
+extension Double {
+    func formatted() -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.groupingSeparator = " "
+        return formatter.string(from: NSNumber(value: self)) ?? "\(self)"
+    }
+}
+
+extension Date {
+    func formatted() -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.locale = Locale(identifier: "ru_RU")
+        return formatter.string(from: self)
+    }
+}
+
+extension ActivationHistory {
+    var formattedDate: String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: createdAt) else { return createdAt }
+        
+        let outputFormatter = DateFormatter()
+        outputFormatter.dateStyle = .medium
+        outputFormatter.timeStyle = .short
+        outputFormatter.locale = Locale(identifier: "ru_RU")
+        return outputFormatter.string(from: date)
+    }
+}
+
+struct HapticButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .onChange(of: configuration.isPressed) { isPressed in
+                if isPressed {
+                    HapticManager.shared.selection()
+                }
+            }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Utils/HapticManager.swift
+================================================================================
+
+import UIKit
+import AudioToolbox
+
+class HapticManager {
+    static let shared = HapticManager()
+    
+    private let selectionGenerator = UISelectionFeedbackGenerator()
+    private let notificationGenerator = UINotificationFeedbackGenerator()
+    private let lightImpact = UIImpactFeedbackGenerator(style: .light)
+    private let mediumImpact = UIImpactFeedbackGenerator(style: .medium)
+    private let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
+    
+    private init() {
+        selectionGenerator.prepare()
+        notificationGenerator.prepare()
+        lightImpact.prepare()
+        mediumImpact.prepare()
+        heavyImpact.prepare()
+    }
+    
+    func impact(style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        switch style {
+        case .light:
+            lightImpact.impactOccurred()
+            AudioServicesPlaySystemSound(1519)
+        case .medium:
+            mediumImpact.impactOccurred()
+            AudioServicesPlaySystemSound(1520)
+        case .heavy:
+            heavyImpact.impactOccurred()
+            AudioServicesPlaySystemSound(1521)
+        @unknown default:
+            mediumImpact.impactOccurred()
+            AudioServicesPlaySystemSound(1520)
+        }
+        prepare()
+    }
+    
+    func notification(type: UINotificationFeedbackGenerator.FeedbackType) {
+        notificationGenerator.notificationOccurred(type)
+        switch type {
+        case .error:
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+        case .success:
+            AudioServicesPlaySystemSound(1521)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                AudioServicesPlaySystemSound(1519)
+            }
+        case .warning:
+            AudioServicesPlaySystemSound(1520)
+        @unknown default:
+            break
+        }
+        prepare()
+    }
+    
+    func selection() {
+        selectionGenerator.selectionChanged()
+        AudioServicesPlaySystemSound(1519)
+        prepare()
+    }
+    
+    func success() {
+        notification(type: .success)
+    }
+    
+    func error() {
+        notification(type: .error)
+    }
+    
+    func warning() {
+        notification(type: .warning)
+    }
+    
+    private func prepare() {
+        selectionGenerator.prepare()
+        notificationGenerator.prepare()
+        lightImpact.prepare()
+        mediumImpact.prepare()
+        heavyImpact.prepare()
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Utils/String+CardFormat.swift
+================================================================================
+
+import Foundation
+
+extension String {
+    func formattedCardNumber() -> String {
+        let digits = self.replacingOccurrences(of: "\\D", with: "", options: .regularExpression)
+        var result = ""
+        for (index, char) in digits.enumerated() {
+            if index > 0 && index % 4 == 0 {
+                result += " "
+            }
+            result.append(char)
+        }
+        return String(result.prefix(19)) // Max 16 digits + 3 spaces
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Utils/ToastView.swift
+================================================================================
+
+import SwiftUI
+
+struct ToastView: View {
+    let message: String
+    
+    var body: some View {
+        Text(message)
+            .font(.subheadline)
+            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.black.opacity(0.8))
+            .cornerRadius(25)
+            .shadow(radius: 10)
+            .padding(.bottom, 50)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+}
+
+struct ToastModifier: ViewModifier {
+    @Binding var message: String?
+    
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+            
+            if let msg = message {
+                VStack {
+                    Spacer()
+                    ToastView(message: msg)
+                }
+                .zIndex(1)
+            }
+        }
+    }
+}
+
+extension View {
+    func toast(message: Binding<String?>) -> some View {
+        self.modifier(ToastModifier(message: message))
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/AccountGroupsViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+
+class AccountGroupsViewModel: ObservableObject {
+    @Published var groups: [AccountGroup] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var toastMessage: String?
+    @Published var formError: String?
+    @Published var selectedGroup: AccountGroup?
+    @Published var isEditing = false
+    
+    let successPublisher = PassthroughSubject<Void, Never>()
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    init() {
+        loadGroups()
+    }
+    
+    func loadGroups() {
+        errorMessage = nil
+        isLoading = true
+        apiService.getAccountGroups()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] groups in
+                self?.groups = groups
+            }
+            .store(in: &cancellables)
+    }
+    
+    func createGroup(accNum: String, grpName: String) {
+        errorMessage = nil
+        isLoading = true
+        apiService.createAccountGroup(accNum: accNum, grpName: grpName)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] _ in
+                self?.triggerToast("Группа успешно создана")
+                self?.successPublisher.send()
+                self?.loadGroups()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func updateGroup(oldAccNum: String, newAccNum: String, grpName: String) {
+        errorMessage = nil
+        isLoading = true
+        apiService.updateAccountGroup(accNum: oldAccNum, newAccNum: newAccNum, grpName: grpName)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] _ in
+                self?.triggerToast("Группа успешно обновлена")
+                self?.successPublisher.send()
+                self?.loadGroups()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func deleteGroup(_ group: AccountGroup) {
+        errorMessage = nil
+        isLoading = true
+        apiService.deleteAccountGroup(accNum: group.accNum)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] _ in
+                self?.triggerToast("Группа успешно удалена")
+                self?.successPublisher.send()
+                self?.loadGroups()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func filteredGroups(_ searchText: String) -> [AccountGroup] {
+        if searchText.isEmpty {
+            return groups
+        }
+        return groups.filter {
+            $0.accNum.localizedCaseInsensitiveContains(searchText) ||
+            $0.grpName.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
+    private func triggerToast(_ message: String) {
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if self.toastMessage == message {
+                self.toastMessage = nil
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/AuthViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+
+class AuthViewModel: ObservableObject {
+    @Published var isAuthenticated = false
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var username = ""
+    @Published var password = ""
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    init() {
+        isAuthenticated = TokenManager.shared.isAuthenticated
+        if isAuthenticated {
+            username = TokenManager.shared.getUsername() ?? ""
+        }
+        
+        // Подписка на уведомление о разлогине
+        NotificationCenter.default.addObserver(forName: APIService.unauthorizedNotification, object: nil, queue: .main) { [weak self] _ in
+            print("AuthViewModel: Received unauthorized notification, logging out...")
+            self?.logout()
+        }
+    }
+    
+    func login() {
+        guard !username.isEmpty, !password.isEmpty else {
+            errorMessage = "Заполните все поля"
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        
+        apiService.login(username: username, password: password)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                switch completion {
+                case .finished:
+                    break
+                case .failure(let error):
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] token in
+                TokenManager.shared.saveToken(token.accessToken, username: self?.username ?? "")
+                self?.isAuthenticated = true
+            }
+            .store(in: &cancellables)
+    }
+    
+    func logout() {
+        TokenManager.shared.clearToken()
+        isAuthenticated = false
+        username = ""
+        password = ""
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/BalanceReportViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+import UIKit
+
+class BalanceReportViewModel: ObservableObject {
+    @Published var items: [BalanceReportItem] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var lastUpdated: String?
+    
+    @Published var summary: BalanceReportSummary?
+    
+    var totalSum: Double {
+        summary?.totalSum ?? items.reduce(0) { $0 + $1.rest }
+    }
+    
+    var cardsSum: Double {
+        summary?.totalCards ?? items.filter { $0.type == "Карта" }.reduce(0) { $0 + $1.rest }
+    }
+    
+    var accountsSum: Double {
+        summary?.totalAccounts ?? items.filter { $0.type == "Счет" }.reduce(0) { $0 + $1.rest }
+    }
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    init() {
+        loadReport()
+    }
+    
+    func loadReport() {
+        isLoading = true
+        apiService.getDetailedBalanceReport()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] response in
+                self?.items = response.data
+                self?.summary = response.summary
+                self?.lastUpdated = DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .medium)
+            }
+            .store(in: &cancellables)
+    }
+    
+    func exportToExcel() {
+        guard let url = apiService.getExportBalanceReportExcelURL() else {
+            self.errorMessage = "Не удалось сформировать ссылку для экспорта"
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        isLoading = true
+        apiService.downloadFile(request: request) { [weak self] tempURL, response, error in
+            DispatchQueue.main.async {
+                self?.isLoading = false
+            }
+            
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.errorMessage = error.localizedDescription
+                }
+                return
+            }
+            
+            guard let tempURL = tempURL else {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Не удалось загрузить файл"
+                }
+                return
+            }
+            
+            let fileName = "balance_report.xlsx"
+            let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            
+            do {
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                
+                DispatchQueue.main.async {
+                    let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootVC = windowScene.windows.first?.rootViewController {
+                        
+                        if let popover = activityVC.popoverPresentationController {
+                            popover.sourceView = rootVC.view
+                            popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                            popover.permittedArrowDirections = []
+                        }
+                        
+                        rootVC.present(activityVC, animated: true)
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Ошибка при сохранении файла: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/CardActivationViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+import UniformTypeIdentifiers
+
+class CardActivationViewModel: ObservableObject {
+    @Published var activationResult: BatchActivationResult?
+    @Published var history: [ActivationHistory] = []
+    @Published var isLoading = false
+    @Published var isUploading = false
+    @Published var isLoadingHistory = false
+    @Published var errorMessage: String?
+    @Published var selectedFile: URL?
+    @Published var toastMessage: String?
+    
+    // Фильтры
+    @Published var filterStartDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @Published var filterEndDate = Date()
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    let successPublisher = PassthroughSubject<Void, Never>()
+    
+    init() {
+        loadHistory()
+    }
+    
+    func activateSingleCard(_ cardNumber: String) {
+        errorMessage = nil
+        isLoading = true
+        
+        apiService.activateSingleCard(cardNumber: cardNumber)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] result in
+                let batchResult = BatchActivationResult(
+                    total: 1,
+                    success: result.success ? 1 : 0,
+                    failed: result.success ? 0 : 1,
+                    results: [result]
+                )
+                self?.activationResult = batchResult
+                let displayMessage = result.success ? "Карта успешно активирована" : (result.message.isEmpty ? "Ошибка активации" : result.message)
+                self?.triggerToast(displayMessage)
+                if result.success {
+                    HapticManager.shared.success()
+                } else {
+                    HapticManager.shared.warning()
+                }
+                self?.successPublisher.send()
+                self?.loadHistory()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func processExcelFile(url: URL) {
+        self.selectedFile = url
+    }
+    
+    func processSelectedFile() {
+        guard let fileURL = selectedFile else { return }
+        
+        errorMessage = nil
+        isUploading = true
+        
+        do {
+            let fileData = try Data(contentsOf: fileURL)
+            
+            apiService.uploadActivationFile(fileData: fileData, fileName: fileURL.lastPathComponent)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] completion in
+                    self?.isUploading = false
+                    if case .failure(let error) = completion {
+                        self?.errorMessage = error.localizedDescription
+                    }
+                } receiveValue: { [weak self] result in
+                    self?.activationResult = result
+                    self?.selectedFile = nil
+                    self?.triggerToast("Файл обработан. Успешно: \(result.success)")
+                    self?.successPublisher.send()
+                    self?.loadHistory()
+                }
+                .store(in: &cancellables)
+        } catch {
+            isUploading = false
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func clearSelectedFile() {
+        selectedFile = nil
+    }
+    
+    func loadHistory() {
+        errorMessage = nil
+        isLoadingHistory = true
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        let startDateStr = dateFormatter.string(from: filterStartDate)
+        let endDateStr = dateFormatter.string(from: filterEndDate)
+        
+        apiService.getActivationHistory(startDate: startDateStr, endDate: endDateStr)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoadingHistory = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] history in
+                self?.history = history
+            }
+            .store(in: &cancellables)
+    }
+    
+    func clearHistory() {
+        errorMessage = nil
+        apiService.clearActivationHistory()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] _ in
+                self?.triggerToast("История очищена")
+                self?.loadHistory()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func cleanupHistory(days: Int) {
+        // Реализация очистки старше N дней
+    }
+    
+    func setFilterToday() {
+        filterStartDate = Date()
+        filterEndDate = Date()
+        loadHistory()
+    }
+    
+    func setFilterWeek() {
+        filterStartDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        filterEndDate = Date()
+        loadHistory()
+    }
+    
+    func formatFileSize(_ size: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: size)
+    }
+    
+    private func triggerToast(_ message: String) {
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if self.toastMessage == message {
+                self.toastMessage = nil
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/HistoryViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+import UIKit
+
+class HistoryViewModel: ObservableObject {
+    @Published var historyItems: [HistoryItem] = []
+    @Published var paginatedItems: [HistoryItem] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var availableGroups: [String] = []
+    
+    // Фильтры
+    @Published var selectedGroup = ""
+    @Published var startDate = Date()
+    @Published var endDate = Date()
+    @Published var daysBack = 7
+    
+    // Пагинация
+    @Published var currentPage = 1
+    @Published var itemsPerPage = 20
+    @Published var totalPages = 1
+    
+    // Статистика
+    struct Stats {
+        let recordCount: Int
+        let totalSum: Double
+        var formattedTotal: String {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.minimumFractionDigits = 2
+            formatter.maximumFractionDigits = 2
+            formatter.groupingSeparator = " "
+            return formatter.string(from: NSNumber(value: totalSum)) ?? "\(totalSum)"
+        }
+    }
+    @Published var stats: Stats?
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    init() {
+        loadAvailableGroups()
+        resetFilters()
+    }
+    
+    func loadAvailableGroups() {
+        apiService.getAvailableGroups()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in } receiveValue: { [weak self] groups in
+                self?.availableGroups = groups
+            }
+            .store(in: &cancellables)
+    }
+    
+    func loadHistory() {
+        isLoading = true
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        let startDateStr = dateFormatter.string(from: startDate)
+        let endDateStr = dateFormatter.string(from: endDate)
+        
+        apiService.getProcessingHistory(
+            groupName: selectedGroup.isEmpty ? nil : selectedGroup,
+            startDate: startDateStr,
+            endDate: endDateStr,
+            daysBack: daysBack
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] completion in
+            self?.isLoading = false
+            if case .failure(let error) = completion {
+                self?.errorMessage = error.localizedDescription
+            }
+        } receiveValue: { [weak self] items in
+            self?.processHistoryItems(items)
+        }
+        .store(in: &cancellables)
+    }
+    
+    private func processHistoryItems(_ items: [HistoryItem]) {
+        var totalSum: Double = 0
+        
+        for item in items {
+            totalSum += item.paymentSum
+        }
+        
+        self.historyItems = items
+        self.stats = Stats(recordCount: items.count, totalSum: totalSum)
+        self.totalPages = max(1, Int(ceil(Double(items.count) / Double(itemsPerPage))))
+        self.currentPage = 1
+        updatePaginatedItems()
+    }
+    
+    func updatePaginatedItems() {
+        let startIndex = (currentPage - 1) * itemsPerPage
+        guard startIndex < historyItems.count else {
+            paginatedItems = []
+            return
+        }
+        
+        let endIndex = min(startIndex + itemsPerPage, historyItems.count)
+        paginatedItems = Array(historyItems[startIndex..<endIndex])
+    }
+    
+    func applyFilters() {
+        currentPage = 1
+        loadHistory()
+    }
+    
+    func resetFilters() {
+        startDate = Date()
+        endDate = Date()
+        selectedGroup = ""
+        daysBack = 1
+        applyFilters()
+    }
+    
+    func updateDatesFromPeriod() {
+        let calendar = Calendar.current
+        endDate = Date()
+        // Если выбрано 1 день, то это сегодня (0 дней назад от сегодня)
+        // Но для логов обычно 1 день это и есть сегодня.
+        // Если API ожидает количество дней, то для "сегодня" это 1.
+        startDate = calendar.date(byAdding: .day, value: -(daysBack - 1), to: Date()) ?? Date()
+        applyFilters()
+    }
+    
+    func nextPage() {
+        if currentPage < totalPages {
+            currentPage += 1
+            updatePaginatedItems()
+        }
+    }
+    
+    func previousPage() {
+        if currentPage > 1 {
+            currentPage -= 1
+            updatePaginatedItems()
+        }
+    }
+    
+    func exportToExcel() {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        
+        let sDate = df.string(from: startDate)
+        let eDate = df.string(from: endDate)
+        let gName = selectedGroup.isEmpty ? nil : selectedGroup
+        
+        guard let url = apiService.getExportHistoryExcelURL(groupName: gName, startDate: sDate, endDate: eDate, daysBack: daysBack) else {
+            self.errorMessage = "Не удалось сформировать ссылку для экспорта"
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        isLoading = true
+        apiService.downloadFile(request: request) { [weak self] tempURL, response, error in
+            DispatchQueue.main.async {
+                self?.isLoading = false
+            }
+            
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.errorMessage = error.localizedDescription
+                }
+                return
+            }
+            
+            guard let tempURL = tempURL else {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Не удалось загрузить файл"
+                }
+                return
+            }
+            
+            // Копируем файл в постоянное временное хранилище с правильным расширением
+            let fileName = "history_export.xlsx"
+            let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            
+            do {
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                
+                DispatchQueue.main.async {
+                    let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootVC = windowScene.windows.first?.rootViewController {
+                        
+                        if let popover = activityVC.popoverPresentationController {
+                            popover.sourceView = rootVC.view
+                            popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                            popover.permittedArrowDirections = []
+                        }
+                        
+                        rootVC.present(activityVC, animated: true)
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Ошибка при сохранении файла: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/MainViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+
+class MainViewModel: ObservableObject {
+    @Published var activeTasksCount = 0
+    @Published var systemStatus: SystemStatus = .unknown
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    enum SystemStatus {
+        case connected
+        case disconnected
+        case unknown
+        
+        var color: String {
+            switch self {
+            case .connected: return "success"
+            case .disconnected: return "danger"
+            case .unknown: return "secondary"
+            }
+        }
+        
+        var text: String {
+            switch self {
+            case .connected: return "Подключено"
+            case .disconnected: return "Отключено"
+            case .unknown: return "Неизвестно"
+            }
+        }
+    }
+    
+    func checkHealth() {
+        // Проверка здоровья системы
+        // Можно добавить отдельный эндпоинт для проверки
+    }
+    
+    func updateActiveTasksCount(_ count: Int) {
+        activeTasksCount = count
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/ProcessingViewModel.swift
+================================================================================
+
+// SBRA PWA/ViewModels/ProcessingViewModel.swift
+
+import Foundation
+import Combine
+import UIKit
+import UniformTypeIdentifiers
+
+class ProcessingViewModel: ObservableObject {
+    @Published var processings: [AvailableProcessing] = []
+    @Published var selectedProcessing: AvailableProcessing?
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var selectedFile: URL?
+    @Published var isUploading = false
+    @Published var uploadResult: UploadResult?
+    @Published var availableGroups: [String] = []
+    @Published var cardCount: Int?
+    @Published var toastMessage: String?
+    
+    // Добавляем эту переменную для управления file picker из UIKit
+    @Published var showFilePicker = false
+    
+    let successPublisher = PassthroughSubject<Void, Never>()
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    struct UploadResult {
+        let success: Bool
+        let message: String
+        let cardCount: Int?
+    }
+    
+    init() {
+        loadProcessings()
+        loadAvailableGroups()
+    }
+    
+    func loadProcessings() {
+        errorMessage = nil
+        isLoading = true
+        apiService.getAvailableProcessings()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] processings in
+                self?.processings = processings
+            }
+            .store(in: &cancellables)
+    }
+    
+    func loadAvailableGroups() {
+        apiService.getAvailableGroups()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in } receiveValue: { [weak self] groups in
+                self?.availableGroups = groups
+            }
+            .store(in: &cancellables)
+    }
+    
+    // ИСПРАВЛЕНО: Теперь показывает file picker
+    func selectFile() {
+        showFilePicker = true
+    }
+    
+    func handleSelectedFile(url: URL) {
+        self.selectedFile = url
+    }
+    
+    func uploadFile() {
+        guard let fileURL = selectedFile else { return }
+        
+        errorMessage = nil
+        isUploading = true
+        
+        do {
+            let fileData = try Data(contentsOf: fileURL)
+            
+            apiService.uploadRuslanFile(fileData: fileData, fileName: fileURL.lastPathComponent)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] completion in
+                    self?.isUploading = false
+                    if case .failure(let error) = completion {
+                        self?.errorMessage = error.localizedDescription
+                        self?.uploadResult = UploadResult(
+                            success: false,
+                            message: error.localizedDescription,
+                            cardCount: nil
+                        )
+                    }
+                } receiveValue: { [weak self] result in
+                    self?.uploadResult = UploadResult(
+                        success: true,
+                        message: result.message,
+                        cardCount: result.count
+                    )
+                    self?.selectedFile = nil
+                    self?.checkCardCount()
+                }
+                .store(in: &cancellables)
+        } catch {
+            isUploading = false
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func checkCardCount() {
+        apiService.getRuslanCardCount()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in } receiveValue: { [weak self] count in
+                self?.cardCount = count
+            }
+            .store(in: &cancellables)
+    }
+    
+    func executeProcessing(parameters: String) {
+        errorMessage = nil
+        guard let processing = selectedProcessing else { return }
+        
+        let request = ProcessingRequest(
+            processingType: processing.code,
+            parameters: parameters.isEmpty ? nil : parameters
+        )
+        
+        apiService.executeProcessing(request)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] _ in
+                // Задача запущена
+                self?.triggerToast("Задача успешно запущена")
+                self?.successPublisher.send()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func formatFileSize(_ size: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: size)
+    }
+    
+    private func triggerToast(_ message: String) {
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if self.toastMessage == message {
+                self.toastMessage = nil
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/TasksViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+import UIKit
+import UserNotifications
+
+class TasksViewModel: ObservableObject {
+    @Published var tasks: [ProcessingTask] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    private var timer: Timer?
+    
+    init() {
+        requestNotificationPermissions()
+        loadTasks()
+        startPolling()
+    }
+    
+    deinit {
+        stopPolling()
+    }
+    
+    func loadTasks() {
+        isLoading = true
+        apiService.getUserTasks()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] newTasks in
+                self?.checkTaskStatusChanges(oldTasks: self?.tasks ?? [], newTasks: newTasks)
+                self?.tasks = newTasks
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func requestNotificationPermissions() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            if granted {
+                print("Notification permission granted")
+            }
+        }
+    }
+    
+    private func checkTaskStatusChanges(oldTasks: [ProcessingTask], newTasks: [ProcessingTask]) {
+        for newTask in newTasks {
+            // Ищем эту же задачу в старом списке
+            if let oldTask = oldTasks.first(where: { $0.taskId == newTask.taskId }) {
+                // Если статус изменился на завершенный или ошибку
+                if oldTask.status == .running || oldTask.status == .pending {
+                    if newTask.status == .completed {
+                        sendLocalNotification(for: newTask, title: "Задача завершена", message: "Обработка «\(newTask.processingType)» успешно выполнена")
+                    } else if newTask.status == .error {
+                        sendLocalNotification(for: newTask, title: "Ошибка в задаче", message: "Обработка «\(newTask.processingType)» завершилась с ошибкой: \(newTask.errorMessage ?? "Неизвестная ошибка")")
+                    }
+                }
+            }
+        }
+    }
+    
+    private func sendLocalNotification(for task: ProcessingTask, title: String, message: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = message
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: "TaskFinished-\(task.taskId)", content: content, trigger: trigger)
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Error sending notification: \(error)")
+            }
+        }
+    }
+    
+    func startPolling() {
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.loadTasks()
+        }
+    }
+    
+    func stopPolling() {
+        timer?.invalidate()
+        timer = nil
+    }
+    
+    func downloadReport(filename: String) {
+        guard let url = URL(string: "https://10.111.170.74:5500/download-report/\(filename)") else { return }
+        
+        var request = URLRequest(url: url)
+        if let token = TokenManager.shared.getToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        APIService.shared.downloadFile(request: request) { localURL, response, error in
+            guard let localURL = localURL, error == nil else {
+                DispatchQueue.main.async {
+                    self.errorMessage = error?.localizedDescription ?? "Ошибка скачивания"
+                }
+                return
+            }
+            
+            DispatchQueue.main.async {
+                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destinationURL = documentsURL.appendingPathComponent(filename)
+                
+                try? FileManager.default.removeItem(at: destinationURL)
+                try? FileManager.default.moveItem(at: localURL, to: destinationURL)
+                
+                // Показываем диалог сохранения
+                let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    rootVC.present(activityVC, animated: true)
+                }
+            }
+        }
+    }
+    
+    func formatDate(_ dateString: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: dateString) else { return dateString }
+        
+        let outputFormatter = DateFormatter()
+        outputFormatter.dateStyle = .short
+        outputFormatter.timeStyle = .short
+        outputFormatter.locale = Locale(identifier: "ru_RU")
+        return outputFormatter.string(from: date)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/ViewModels/WhiteListViewModel.swift
+================================================================================
+
+import Foundation
+import Combine
+import UIKit
+
+class WhiteListViewModel: ObservableObject {
+    @Published var cards: [WhiteListCard] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var showSuccessMessage = false
+    @Published var successMessage: String?
+    @Published var toastMessage: String?
+    
+    private var cancellables = Set<AnyCancellable>()
+    private let apiService = APIService.shared
+    
+    let successPublisher = PassthroughSubject<Void, Never>()
+    
+    init() {
+        loadCards()
+    }
+    
+    func loadCards() {
+        errorMessage = nil
+        isLoading = true
+        apiService.getWhiteListCards()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] cards in
+                self?.cards = cards
+            }
+            .store(in: &cancellables)
+    }
+    
+    func addSingleCard(cardNum: String, typeCon: String) {
+        errorMessage = nil
+        isLoading = true
+        apiService.addSingleCardToWhiteList(cardNum: cardNum, typeCon: typeCon)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] response in
+                self?.triggerToast("Карта успешно добавлена")
+                self?.successPublisher.send()
+                self?.loadCards()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func uploadWhiteListFile(fileURL: URL) {
+        guard let data = try? Data(contentsOf: fileURL) else {
+            self.errorMessage = "Не удалось прочитать файл"
+            return
+        }
+        
+        errorMessage = nil
+        isLoading = true
+        apiService.addCardsToWhiteList(fileData: data, fileName: fileURL.lastPathComponent)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] response in
+                self?.triggerToast("Файл успешно загружен. Обработано \(response.count ?? 0) карт")
+                self?.successPublisher.send()
+                self?.loadCards()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func deleteCard(cardNum: String) {
+        errorMessage = nil
+        isLoading = true
+        apiService.deleteWhiteListCard(cardNum: cardNum)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] _ in
+                self?.triggerToast("Карта успешно удалена")
+                self?.loadCards()
+            }
+            .store(in: &cancellables)
+    }
+    
+    func clearGroup(groupName: String) {
+        errorMessage = nil
+        isLoading = true
+        apiService.clearWhiteListByGroup(groupName: groupName)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                if case .failure(let error) = completion {
+                    self?.errorMessage = error.localizedDescription
+                }
+            } receiveValue: { [weak self] _ in
+                self?.triggerToast("Группа успешно очищена")
+                self?.loadCards()
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func triggerToast(_ message: String) {
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if self.toastMessage == message {
+                self.toastMessage = nil
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Auth/LoginView.swift
+================================================================================
+
+import SwiftUI
+
+struct LoginView: View {
+    @StateObject private var viewModel = AuthViewModel()
+    @State private var showingAlert = false
+    
+    var body: some View {
+        ZStack {
+            // Градиентный фон
+            LinearGradient(
+                gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.7)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                // Логотип и заголовок
+                VStack(spacing: 15) {
+                    Image(systemName: "externaldrive.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(.white)
+                    
+                    Text("Oracle Processor")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                    
+                    Text("Мобильная версия")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                .padding(.top, 50)
+                
+                // Форма входа
+                VStack(spacing: 20) {
+                    TextField("Логин", text: $viewModel.username)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .padding(.horizontal)
+                    
+                    SecureField("Пароль", text: $viewModel.password)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .padding(.horizontal)
+                    
+                    Button(action: {
+                        viewModel.login()
+                    }) {
+                        HStack {
+                            if viewModel.isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .padding(.trailing, 5)
+                            }
+                            Text(viewModel.isLoading ? "Вход..." : "Войти")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.white)
+                        .foregroundColor(.blue)
+                        .cornerRadius(10)
+                    }
+                    .disabled(viewModel.isLoading)
+                    .padding(.horizontal)
+                    
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                            .padding(.top, 5)
+                    }
+                }
+                .padding(.vertical, 30)
+                .background(Color.white.opacity(0.2))
+                .cornerRadius(20)
+                .padding(.horizontal)
+                
+                Spacer()
+                
+                // Подвал
+                Text("Для продолжения работы требуется авторизация")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.bottom, 20)
+            }
+        }
+        .onReceive(viewModel.$isAuthenticated) { isAuthenticated in
+            if isAuthenticated {
+                // Переход на главный экран
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first {
+                    window.rootViewController = UIHostingController(rootView: MainTabView())
+                    UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve, animations: nil, completion: nil)
+                    window.makeKeyAndVisible()
+                }
+            }
+        }
+    }
+}
+
+struct LoginView_Previews: PreviewProvider {
+    static var previews: some View {
+        LoginView()
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/AccountGroupsView.swift
+================================================================================
+
+import SwiftUI
+
+struct AccountGroupsView: View {
+    @StateObject private var viewModel = AccountGroupsViewModel()
+    @State private var showingAddModal = false
+    @State private var searchText = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                // Поиск
+                SearchBar(text: $searchText, placeholder: "Поиск по счету или группе")
+                    .padding(.horizontal)
+                
+                if viewModel.isLoading {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                } else if viewModel.groups.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "folder")
+                            .font(.largeTitle)
+                            .foregroundColor(.gray)
+                        Text("Нет записей")
+                            .foregroundColor(.gray)
+                        Button("Добавить первую запись") {
+                            showingAddModal = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(viewModel.filteredGroups(searchText)) { group in
+                            Button(action: {
+                                viewModel.selectedGroup = group
+                                viewModel.isEditing = true
+                                showingAddModal = true
+                            }) {
+                                AccountGroupRow(group: group)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Группы счетов")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack {
+                        Button(action: {
+                            viewModel.loadGroups()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        
+                        Button(action: {
+                            viewModel.selectedGroup = nil
+                            viewModel.isEditing = false
+                            showingAddModal = true
+                        }) {
+                            Image(systemName: "plus")
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddModal) {
+                AccountGroupModal(viewModel: viewModel, isPresented: $showingAddModal)
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil && !showingAddModal },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+            .toast(message: $viewModel.toastMessage)
+        }
+    }
+}
+
+struct SearchBar: View {
+    @Binding var text: String
+    let placeholder: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.gray)
+            
+            TextField(placeholder, text: $text)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            
+            if !text.isEmpty {
+                Button(action: { text = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+    }
+}
+
+struct AccountGroupRow: View {
+    let group: AccountGroup
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(group.accNum)
+                    .font(.headline)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(.primary)
+                
+                Text(group.grpName)
+                    .font(.caption)
+                    .padding(4)
+                    .background(Color.blue.opacity(0.2))
+                    .foregroundColor(.blue)
+                    .cornerRadius(4)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.gray)
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 8)
+    }
+}
+
+struct AccountGroupModal: View {
+    @ObservedObject var viewModel: AccountGroupsViewModel
+    @Binding var isPresented: Bool
+    @State private var accNum = ""
+    @State private var grpName = ""
+    @State private var showingDeleteConfirmation = false
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                Form {
+                    Section(header: Text("Данные")) {
+                        TextField("Номер счета", text: $accNum)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        TextField("Группа (STREAM_%)", text: $grpName)
+                            .autocapitalization(.allCharacters)
+                            .disableAutocorrection(true)
+                            .onChange(of: grpName) { newValue in
+                                grpName = newValue.uppercased()
+                            }
+                    }
+                    
+                    if let error = viewModel.formError {
+                        Section {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
+                    }
+                    
+                    Section {
+                        Text("Группа должна быть в формате STREAM_% и содержать только заглавные буквы, цифры и _")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    if viewModel.isEditing {
+                        Section {
+                            Button(role: .destructive) {
+                                showingDeleteConfirmation = true
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: "trash")
+                                    Text("Удалить счет")
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    }
+                }
+                
+                Button(action: {
+                    if viewModel.isEditing, let group = viewModel.selectedGroup {
+                        viewModel.updateGroup(oldAccNum: group.accNum, newAccNum: accNum, grpName: grpName)
+                    } else {
+                        viewModel.createGroup(accNum: accNum, grpName: grpName)
+                    }
+                }) {
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text(viewModel.isEditing ? "Сохранить изменения" : "Создать группу")
+                            .frame(maxWidth: .infinity)
+                            .fontWeight(.bold)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding()
+                .disabled(accNum.isEmpty || grpName.isEmpty || !validateGroupName(grpName) || viewModel.isLoading)
+            }
+            .navigationTitle(viewModel.isEditing ? "Редактирование" : "Добавление")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        isPresented = false
+                    }) {
+                        HStack {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .bold)) // Жирная и стрелка
+                        }
+                    }
+                }
+            }
+            .onReceive(viewModel.successPublisher) { _ in
+                isPresented = false
+            }
+            .onAppear {
+                if let group = viewModel.selectedGroup {
+                    accNum = group.accNum
+                    grpName = group.grpName
+                }
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+            .alert("Удаление счета", isPresented: $showingDeleteConfirmation) {
+                Button("Отмена", role: .cancel) {}
+                Button("Удалить", role: .destructive) {
+                    if let group = viewModel.selectedGroup {
+                        viewModel.deleteGroup(group)
+                    }
+                }
+            } message: {
+                Text("Вы уверены, что хотите удалить этот счет из группы?")
+            }
+        }
+    }
+    
+    private func validateGroupName(_ name: String) -> Bool {
+        let pattern = "^STREAM_[A-Z0-9_]+$"
+        let predicate = NSPredicate(format: "SELF MATCHES %@", pattern)
+        return predicate.evaluate(with: name)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/BalanceReportView.swift
+================================================================================
+
+import SwiftUI
+
+struct BalanceReportView: View {
+    @StateObject private var viewModel = BalanceReportViewModel()
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Карточки с итогами
+                    TotalsCards(viewModel: viewModel)
+                    
+                    // Таблица
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .padding()
+                    } else if viewModel.items.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "chart.pie")
+                                .font(.largeTitle)
+                                .foregroundColor(.gray)
+                            Text("Нет данных")
+                                .foregroundColor(.gray)
+                            Button("Загрузить отчет") {
+                                viewModel.loadReport()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                    } else {
+                        BalanceTableView(items: viewModel.items)
+                        
+                        if let lastUpdated = viewModel.lastUpdated {
+                            Text("Обновлено: \(lastUpdated)")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Остатки")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack {
+                        Button(action: {
+                            viewModel.exportToExcel()
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .disabled(viewModel.items.isEmpty)
+                        
+                        Button(action: {
+                            viewModel.loadReport()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                }
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+        }
+    }
+}
+
+struct TotalsCards: View {
+    @ObservedObject var viewModel: BalanceReportViewModel
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            TotalCard(
+                title: "Общий итог",
+                value: viewModel.totalSum,
+                color: .blue
+            )
+            
+            TotalCard(
+                title: "Карты",
+                value: viewModel.cardsSum,
+                color: .green
+            )
+            
+            TotalCard(
+                title: "Счета",
+                value: viewModel.accountsSum,
+                color: .orange
+            )
+        }
+    }
+}
+
+struct TotalCard: View {
+    let title: String
+    let value: Double
+    let color: Color
+    
+    var formattedValue: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.groupingSeparator = " "
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.8))
+            
+            Text(formattedValue)
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(color)
+        .cornerRadius(10)
+    }
+}
+
+struct BalanceTableView: View {
+    let items: [BalanceReportItem]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Детализация")
+                .font(.headline)
+            
+            ForEach(items) { item in
+                BalanceRow(item: item)
+            }
+            
+            HStack {
+                Text("ОБЩИЙ ИТОГ:")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Text(items.reduce(0) { $0 + $1.rest }.formatted())
+                    .font(.headline)
+                    .foregroundColor(.blue)
+            }
+            .padding(.top)
+        }
+    }
+}
+
+struct BalanceRow: View {
+    let item: BalanceReportItem
+    
+    var body: some View {
+        HStack {
+            Text(item.type)
+                .font(.caption)
+                .padding(4)
+                .background(item.type == "Карта" ? Color.blue.opacity(0.2) : Color.orange.opacity(0.2))
+                .foregroundColor(item.type == "Карта" ? .blue : .orange)
+                .cornerRadius(4)
+            
+            Text(item.groupName)
+                .font(.system(.body, design: .monospaced))
+            
+            Spacer()
+            
+            Text(item.formattedRest)
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundColor(item.rest >= 0 ? .primary : .red)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/CardActivationView.swift
+================================================================================
+
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct CardActivationView: View {
+    @StateObject private var viewModel = CardActivationViewModel()
+    @State private var showingFilePicker = false
+    @State private var cardNumber = ""
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Активация одной карты
+                    SingleActivationSection(
+                        cardNumber: $cardNumber,
+                        viewModel: viewModel
+                    )
+                    
+                    // Разделитель
+                    HStack {
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(.gray.opacity(0.3))
+                        Text("ИЛИ")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(.gray.opacity(0.3))
+                    }
+                    .padding(.horizontal)
+                    
+                    // Пакетная активация
+                    BatchActivationSection(
+                        viewModel: viewModel,
+                        showingFilePicker: $showingFilePicker
+                    )
+                    
+                    // Результаты
+                    if let result = viewModel.activationResult {
+                        ActivationResultView(result: result)
+                    }
+                    
+                    // История активаций
+                    ActivationHistoryView(viewModel: viewModel)
+                }
+                .padding()
+            }
+            .navigationTitle("Активация карт")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        viewModel.loadHistory()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+            }
+            .fileImporter(
+                isPresented: $showingFilePicker,
+                allowedContentTypes: [.excel],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    viewModel.processExcelFile(url: url)
+                case .failure(let error):
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+            .toast(message: $viewModel.toastMessage)
+        }
+    }
+}
+
+struct SingleActivationSection: View {
+    @Binding var cardNumber: String
+    @ObservedObject var viewModel: CardActivationViewModel
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Активация одной карты")
+                .font(.headline)
+            
+            VStack(spacing: 16) {
+                TextField("Введите номер карты", text: $cardNumber)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .keyboardType(.numberPad)
+                
+                Button(action: {
+                    let cleanNumber = cardNumber.replacingOccurrences(of: " ", with: "")
+                    viewModel.activateSingleCard(cleanNumber)
+                    cardNumber = ""
+                }) {
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Активировать карту")
+                            .frame(maxWidth: .infinity)
+                            .fontWeight(.bold)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(cardNumber.isEmpty || viewModel.isLoading)
+            }
+            .onChange(of: cardNumber) { newValue in
+                cardNumber = newValue.formattedCardNumber()
+            }
+            
+            Text("Номер карты будет автоматически очищен от пробелов")
+                .font(.caption)
+                .foregroundColor(.gray)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .gray.opacity(0.1), radius: 5)
+    }
+}
+
+struct BatchActivationSection: View {
+    @ObservedObject var viewModel: CardActivationViewModel
+    @Binding var showingFilePicker: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Пакетная активация из Excel")
+                .font(.headline)
+            
+            HStack {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.blue)
+                Text("Загрузите Excel файл с номерами карт в первом столбце")
+                    .font(.caption)
+            }
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(8)
+            
+            if let file = viewModel.selectedFile {
+                HStack {
+                    Image(systemName: "doc")
+                    Text(file.lastPathComponent)
+                    Spacer()
+                    Text(viewModel.formatFileSize(file.fileSize))
+                        .foregroundColor(.gray)
+                }
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(8)
+            }
+            
+            HStack {
+                Button(action: { showingFilePicker = true }) {
+                    Label("Выбрать файл", systemImage: "doc.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                
+                if viewModel.selectedFile != nil {
+                    Button(action: {
+                        viewModel.processSelectedFile()
+                    }) {
+                        if viewModel.isUploading {
+                            ProgressView()
+                        } else {
+                            Label("Загрузить", systemImage: "arrow.up.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.isUploading)
+                    
+                    Button(action: {
+                        viewModel.clearSelectedFile()
+                    }) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .gray.opacity(0.1), radius: 5)
+    }
+}
+
+struct ActivationResultView: View {
+    let result: BatchActivationResult
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Результаты активации")
+                .font(.headline)
+            
+            HStack {
+                ResultCard(title: "Всего", value: result.total, color: .blue)
+                ResultCard(title: "Успешно", value: result.success, color: .green)
+                ResultCard(title: "Ошибки", value: result.failed, color: .red)
+            }
+            
+            if !result.results.isEmpty {
+                DisclosureGroup("Детали") {
+                    ForEach(result.results.indices, id: \.self) { index in
+                        let item = result.results[index]
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(item.cardNumber)
+                                    .font(.caption)
+                                    .font(.system(.caption, design: .monospaced))
+                                
+                                Spacer()
+                                
+                                Image(systemName: item.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundColor(item.success ? .green : .red)
+                            }
+                            
+                            Text(item.message)
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            
+                            if let details = item.details, let code = details.responseCode {
+                                Text("Код: \(code)")
+                                    .font(.caption2)
+                                    .foregroundColor(.gray)
+                            }
+                            
+                            if index < result.results.count - 1 {
+                                Divider()
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .gray.opacity(0.1), radius: 5)
+    }
+}
+
+struct ResultCard: View {
+    let title: String
+    let value: Int
+    let color: Color
+    
+    var body: some View {
+        VStack {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.gray)
+            Text("\(value)")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(color.opacity(0.1))
+        .cornerRadius(8)
+    }
+}
+
+struct ActivationHistoryView: View {
+    @ObservedObject var viewModel: CardActivationViewModel
+    @State private var showingFilters = false
+    @State private var showingClearHistoryConfirmation = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("История активаций")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button(action: { showingFilters.toggle() }) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+                
+                Button(action: {
+                    showingClearHistoryConfirmation = true
+                }) {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                }
+            }
+            .alert("Очистка истории", isPresented: $showingClearHistoryConfirmation) {
+                Button("Отмена", role: .cancel) {}
+                Button("Очистить", role: .destructive) {
+                    viewModel.clearHistory()
+                }
+            } message: {
+                Text("Вы уверены, что хотите полностью очистить историю активаций?")
+            }
+            
+            if showingFilters {
+                HistoryFiltersView(viewModel: viewModel)
+            }
+            
+            if viewModel.isLoadingHistory {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+                .padding()
+            } else if viewModel.history.isEmpty {
+                Text("Нет истории активаций")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+            } else {
+                Text("Найдено записей: \(viewModel.history.count)")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
+                ForEach(viewModel.history) { item in
+                    HistoryActivationRow(item: item)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .gray.opacity(0.1), radius: 5)
+    }
+}
+
+struct HistoryFiltersView: View {
+    @ObservedObject var viewModel: CardActivationViewModel
+    
+    var body: some View {
+        VStack {
+            DatePicker("С", selection: $viewModel.filterStartDate, displayedComponents: .date)
+            DatePicker("По", selection: $viewModel.filterEndDate, displayedComponents: .date)
+            
+            HStack {
+                Button("Сегодня") {
+                    viewModel.setFilterToday()
+                }
+                .buttonStyle(.bordered)
+                
+                Button("7 дней") {
+                    viewModel.setFilterWeek()
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Очистить старше 30 дней") {
+                    viewModel.cleanupHistory(days: 30)
+                }
+                .buttonStyle(.bordered)
+                .foregroundColor(.orange)
+            }
+            
+            Button("Применить") {
+                viewModel.loadHistory()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(8)
+    }
+}
+
+struct HistoryActivationRow: View {
+    let item: ActivationHistory
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(item.formattedDate)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
+                Spacer()
+                
+                Text(item.success == 1 ? "Успех" : "Ошибка")
+                    .font(.caption2)
+                    .padding(4)
+                    .background(item.success == 1 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
+                    .foregroundColor(item.success == 1 ? .green : .red)
+                    .cornerRadius(4)
+            }
+            
+            Text(item.cardNumber ?? item.cleanCard ?? "")
+                .font(.subheadline)
+                .font(.system(.subheadline, design: .monospaced))
+            
+            if let message = item.message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            if let details = item.details, let code = details.responseCode {
+                Text("Код: \(code)")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/HistoryView.swift
+================================================================================
+
+import SwiftUI
+
+struct HistoryView: View {
+    @StateObject private var viewModel = HistoryViewModel()
+    @State private var showingFilters = false
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                // Фильтры
+                if showingFilters {
+                    FiltersView(viewModel: viewModel)
+                }
+                
+                // Статистика
+                if let stats = viewModel.stats {
+                    StatsView(stats: stats)
+                }
+                
+                // Таблица истории
+                HistoryTableView(viewModel: viewModel)
+            }
+            .navigationTitle("История обработок")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showingFilters.toggle() }) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack {
+                        Button(action: {
+                            viewModel.exportToExcel()
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .disabled(viewModel.historyItems.isEmpty)
+                        
+                        Button(action: {
+                            viewModel.loadHistory()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                }
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+        }
+    }
+}
+
+struct FiltersView: View {
+    @ObservedObject var viewModel: HistoryViewModel
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            Picker("Группа", selection: $viewModel.selectedGroup) {
+                Text("Все группы").tag("")
+                ForEach(viewModel.availableGroups, id: \.self) { group in
+                    Text(group).tag(group)
+                }
+            }
+            .pickerStyle(.menu)
+            
+            HStack {
+                DatePicker("С", selection: $viewModel.startDate, displayedComponents: .date)
+                DatePicker("По", selection: $viewModel.endDate, displayedComponents: .date)
+            }
+            
+            Picker("Период", selection: $viewModel.daysBack) {
+                Text("1 день").tag(1)
+                Text("3 дня").tag(3)
+                Text("7 дней").tag(7)
+                Text("14 дней").tag(14)
+                Text("30 дней").tag(30)
+                Text("90 дней").tag(90)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: viewModel.daysBack) { _ in
+                viewModel.updateDatesFromPeriod()
+            }
+            
+            HStack {
+                Button("Применить") {
+                    viewModel.applyFilters()
+                }
+                .buttonStyle(.borderedProminent)
+                
+                Button("Сбросить") {
+                    viewModel.resetFilters()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .gray.opacity(0.2), radius: 5)
+        .padding()
+    }
+}
+
+struct StatsView: View {
+    let stats: HistoryViewModel.Stats
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text("Всего записей:")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Text("\(stats.recordCount)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing) {
+                Text("Общая сумма:")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Text(stats.formattedTotal)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.green)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .padding(.horizontal)
+    }
+}
+
+struct HistoryTableView: View {
+    @ObservedObject var viewModel: HistoryViewModel
+    
+    var body: some View {
+        if viewModel.isLoading {
+            Spacer()
+            ProgressView()
+            Spacer()
+        } else if viewModel.historyItems.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "tray")
+                    .font(.largeTitle)
+                    .foregroundColor(.gray)
+                Text("Нет данных")
+                    .foregroundColor(.gray)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List {
+                ForEach(viewModel.paginatedItems, id: \.id) { item in
+                    HistoryRow(item: item)
+                }
+                
+                // Пагинация
+                HStack {
+                    Button(action: { viewModel.previousPage() }) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(viewModel.currentPage == 1)
+                    
+                    Text("\(viewModel.currentPage) из \(viewModel.totalPages)")
+                        .font(.caption)
+                    
+                    Button(action: { viewModel.nextPage() }) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(viewModel.currentPage == viewModel.totalPages)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+            }
+            .listStyle(.plain)
+        }
+    }
+}
+
+struct HistoryRow: View {
+    let item: HistoryItem
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(item.formattedDate)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
+                Spacer()
+                
+                Text(item.groupType)
+                    .font(.caption2)
+                    .padding(4)
+                    .background(Color.blue.opacity(0.2))
+                    .foregroundColor(.blue)
+                    .cornerRadius(4)
+            }
+            
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Карта: \(item.cardNum)")
+                        .font(.subheadline)
+                    
+                    if let account = item.accountNum {
+                        Text("Счет: \(account)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing) {
+                    Text(item.formattedSum)
+                        .font(.headline)
+                        .foregroundColor(item.paymentSum >= 0 ? .primary : .red)
+                    
+                    if let error = item.errorText {
+                        Text("Ошибка")
+                            .font(.caption2)
+                            .padding(4)
+                            .background(Color.red.opacity(0.2))
+                            .foregroundColor(.red)
+                            .cornerRadius(4)
+                    } else {
+                        Text("Успешно")
+                            .font(.caption2)
+                            .padding(4)
+                            .background(Color.green.opacity(0.2))
+                            .foregroundColor(.green)
+                            .cornerRadius(4)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/MainTabView.swift
+================================================================================
+
+import SwiftUI
+
+struct MainTabView: View {
+    @State private var selectedTab = 0
+    @StateObject private var authViewModel = AuthViewModel()
+    
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            ProcessingView()
+                .tabItem {
+                    Label("Обработки", systemImage: "play.circle")
+                }
+                .tag(0)
+            
+            TasksView()
+                .tabItem {
+                    Label("Задачи", systemImage: "clock")
+                }
+                .tag(1)
+            
+            HistoryView()
+                .tabItem {
+                    Label("История", systemImage: "list.bullet")
+                }
+                .tag(2)
+            
+            AccountGroupsView()
+                .tabItem {
+                    Label("Группы", systemImage: "folder")
+                }
+                .tag(3)
+            
+            BalanceReportView()
+                .tabItem {
+                    Label("Остатки", systemImage: "chart.pie")
+                }
+                .tag(4)
+            
+            CardActivationView()
+                .tabItem {
+                    Label("Активация", systemImage: "creditcard")
+                }
+                .tag(5)
+            
+            WhiteListView()
+                .tabItem {
+                    Label("Белый список", systemImage: "checkmark.seal")
+                }
+                .tag(6)
+            
+            // Новая вкладка настроек/выхода
+            VStack(spacing: 20) {
+                Image(systemName: "person.circle")
+                    .font(.system(size: 80))
+                    .foregroundColor(.blue)
+                
+                Text(authViewModel.username)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Button(action: {
+                    authViewModel.logout()
+                }) {
+                    Text("Выйти из аккаунта")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red)
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal, 40)
+            }
+            .tabItem {
+                Label("Профиль", systemImage: "person.circle")
+            }
+            .tag(7)
+        }
+        .buttonStyle(HapticButtonStyle())
+        .accentColor(.blue)
+        .onReceive(authViewModel.$isAuthenticated) { isAuthenticated in
+            if !isAuthenticated {
+                // Переход на экран входа
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first {
+                    window.rootViewController = UIHostingController(rootView: LoginView())
+                    UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve, animations: nil, completion: nil)
+                    window.makeKeyAndVisible()
+                }
+            }
+        }
+    }
+}
+
+struct MainTabView_Previews: PreviewProvider {
+    static var previews: some View {
+        MainTabView()
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/ProcessingView.swift
+================================================================================
+
+import SwiftUI
+
+// SBRA PWA/Views/Main/ProcessingView.swift - часть с fileImporter
+
+struct ProcessingView: View {
+    @StateObject private var viewModel = ProcessingViewModel()
+    @State private var showingProcessingModal = false
+    // Убираем @State private var showingFilePicker = false, так как теперь используем viewModel.showFilePicker
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Секция загрузки Excel файла
+                    ExcelUploadSection(viewModel: viewModel)
+                    
+                    // Секция доступных обработок
+                    ProcessingsSection(
+                        viewModel: viewModel,
+                        showingModal: $showingProcessingModal
+                    )
+                }
+                .padding()
+            }
+            .navigationTitle("Обработки")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        viewModel.loadProcessings()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingProcessingModal) {
+                if let selected = viewModel.selectedProcessing {
+                    ProcessingDetailModal(
+                        processing: selected,
+                        viewModel: viewModel,
+                        isPresented: $showingProcessingModal
+                    )
+                }
+            }
+            // ИСПРАВЛЕНО: Используем viewModel.showFilePicker вместо локальной переменной
+            .fileImporter(
+                isPresented: $viewModel.showFilePicker,  // ← Изменено здесь
+                allowedContentTypes: [.excel],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    viewModel.handleSelectedFile(url: url)
+                case .failure(let error):
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil && !showingProcessingModal },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+            .toast(message: $viewModel.toastMessage)
+        }
+    }
+}
+
+struct ExcelUploadSection: View {
+    @ObservedObject var viewModel: ProcessingViewModel
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundColor(.yellow)
+                Text("Для группы STREAM_RUSLAN необходимо загрузить Excel файл")
+                    .font(.subheadline)
+            }
+            .padding()
+            .background(Color.yellow.opacity(0.1))
+            .cornerRadius(8)
+            
+            if let file = viewModel.selectedFile {
+                HStack {
+                    Image(systemName: "doc")
+                    Text(file.lastPathComponent)
+                    Spacer()
+                    Text(viewModel.formatFileSize(file.fileSize))
+                        .foregroundColor(.gray)
+                }
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(8)
+            }
+            
+            HStack {
+                Button(action: { viewModel.selectFile() }) {
+                    Label("Выбрать файл", systemImage: "doc.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                
+                if viewModel.selectedFile != nil {
+                    Button(action: { viewModel.uploadFile() }) {
+                        if viewModel.isUploading {
+                            ProgressView()
+                        } else {
+                            Label("Загрузить", systemImage: "arrow.up.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.isUploading)
+                }
+            }
+            
+            if let result = viewModel.uploadResult {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundColor(result.success ? .green : .red)
+                        Text(result.message)
+                            .font(.subheadline)
+                    }
+                    
+                    if let cardCount = result.cardCount {
+                        Text("В таблице карт: \(cardCount)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding()
+                .background(result.success ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+                .cornerRadius(8)
+            }
+            
+            Divider()
+        }
+    }
+}
+
+struct ProcessingsSection: View {
+    @ObservedObject var viewModel: ProcessingViewModel
+    @Binding var showingModal: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Доступные обработки")
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.processings.count)")
+                    .font(.caption)
+                    .padding(5)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .clipShape(Circle())
+            }
+            
+            if viewModel.isLoading {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+                .padding()
+            } else if viewModel.processings.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "tray")
+                        .font(.largeTitle)
+                        .foregroundColor(.gray)
+                    Text("Нет доступных обработок")
+                        .foregroundColor(.gray)
+                    Button("Загрузить") {
+                        viewModel.loadProcessings()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(viewModel.processings) { processing in
+                        ProcessingRow(
+                            processing: processing,
+                            onSelect: {
+                                viewModel.selectedProcessing = processing
+                                showingModal = true
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ProcessingRow: View {
+    let processing: AvailableProcessing
+    let onSelect: () -> Void
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(processing.name)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    if let description = processing.description {
+                        Text(description)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
+                    }
+                    
+                    HStack {
+                        Text(processing.code)
+                            .font(.caption2)
+                            .padding(4)
+                            .background(Color.gray.opacity(0.2))
+                            .cornerRadius(4)
+                        
+                        if processing.code == "STREAM_RUSLAN" {
+                            Text("требуется файл")
+                                .font(.caption2)
+                                .padding(4)
+                                .background(Color.yellow.opacity(0.2))
+                                .cornerRadius(4)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.blue)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(10)
+            .shadow(color: .gray.opacity(0.1), radius: 5)
+        }
+    }
+}
+
+struct ProcessingDetailModal: View {
+    let processing: AvailableProcessing
+    @ObservedObject var viewModel: ProcessingViewModel
+    @Binding var isPresented: Bool
+    @State private var parameters = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                Form {
+                    if processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0 {
+                        Section {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .foregroundColor(.yellow)
+                                Text("Для обработки STREAM_RUSLAN необходимо сначала загрузить Excel файл")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    
+                    Section(header: Text("Параметры")) {
+                        TextField("Группа (например: STREAM_%)", text: $parameters)
+                        
+                        Picker("Выберите из истории", selection: $parameters) {
+                            Text("").tag("")
+                            ForEach(viewModel.availableGroups, id: \.self) { group in
+                                Text(group).tag(group)
+                            }
+                        }
+                    }
+                    
+                    Section {
+                        Text("Выполняется процедура: \(processing.description ?? "")")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                Button(action: {
+                    viewModel.executeProcessing(parameters: parameters)
+                }) {
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Запустить обработку")
+                            .frame(maxWidth: .infinity)
+                            .fontWeight(.bold)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding()
+                .disabled(processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0 || viewModel.isLoading)
+            }
+            .navigationTitle(processing.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") {
+                        isPresented = false
+                    }
+                }
+            }
+            .onReceive(viewModel.successPublisher) { _ in
+                isPresented = false
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/TasksView.swift
+================================================================================
+
+import SwiftUI
+
+struct TasksView: View {
+    @StateObject private var viewModel = TasksViewModel()
+    
+    var body: some View {
+        NavigationView {
+            List {
+                if viewModel.isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                } else if viewModel.tasks.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tray")
+                            .font(.largeTitle)
+                            .foregroundColor(.gray)
+                        Text("Нет задач")
+                            .foregroundColor(.gray)
+                        Button("Обновить") {
+                            viewModel.loadTasks()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                } else {
+                    ForEach(viewModel.tasks) { task in
+                        TaskRow(task: task, viewModel: viewModel)
+                    }
+                }
+            }
+            .navigationTitle("Мои задачи")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        viewModel.loadTasks()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+            }
+            .refreshable {
+                viewModel.loadTasks()
+            }
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+        }
+    }
+}
+
+struct TaskRow: View {
+    let task: ProcessingTask
+    let viewModel: TasksViewModel
+    @State private var showingError = false
+    
+    var statusColor: Color {
+        switch task.status {
+        case .pending: return .orange
+        case .running: return .blue
+        case .completed: return .green
+        case .error: return .red
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(String(task.taskId.prefix(8)) + "...")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
+                Spacer()
+                
+                Text(task.status.displayName)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(statusColor.opacity(0.2))
+                    .foregroundColor(statusColor)
+                    .cornerRadius(4)
+            }
+            
+            Text(task.processingType)
+                .font(.headline)
+            
+            if let parameters = task.parameters {
+                Text("Параметры: \(parameters)")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            HStack {
+                Text(viewModel.formatDate(task.createdAt))
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+                
+                Spacer()
+                
+                if task.status == .completed, let filename = task.filename {
+                    Button(action: {
+                        viewModel.downloadReport(filename: filename)
+                    }) {
+                        Label("Скачать", systemImage: "arrow.down.doc")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                
+                if task.status == .error, let error = task.errorMessage {
+                    Button(action: {
+                        showingError = true
+                    }) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundColor(.red)
+                    }
+                    .alert("Ошибка", isPresented: $showingError) {
+                        Button("OK") {}
+                    } message: {
+                        Text(error)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/WhiteListView.swift
+================================================================================
+
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct WhiteListView: View {
+    @StateObject private var viewModel = WhiteListViewModel()
+    @State private var searchText = ""
+    @State private var selectedGroup = "Все"
+    @State private var showAddCardSheet = false
+    @State private var showImportSheet = false
+    
+    // For adding single card
+    @State private var newCardNum = ""
+    @State private var newGroup = ""
+    
+    // Deletion confirmation
+    @State private var showingDeleteConfirmation = false
+    @State private var cardToDelete: WhiteListCard?
+    
+    // For file import
+    @State private var showFilePicker = false
+    
+    var filteredCards: [WhiteListCard] {
+        viewModel.cards.filter { card in
+            let matchesSearch = searchText.isEmpty || card.cardNum.contains(searchText)
+            let matchesGroup = selectedGroup == "Все" || card.typeCon == selectedGroup
+            return matchesSearch && matchesGroup
+        }
+    }
+    
+    var groups: [String] {
+        let allGroups = Set(viewModel.cards.map { $0.typeCon })
+        return ["Все"] + allGroups.sorted()
+    }
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color(.systemGroupedBackground).ignoresSafeArea()
+                
+                VStack(spacing: 0) {
+                    // Search and Filter
+                    VStack(spacing: 12) {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                            TextField("Поиск по номеру карты", text: $searchText)
+                                .keyboardType(.numberPad)
+                                .onChange(of: searchText) { newValue in
+                                    searchText = newValue.formattedCardNumber()
+                                }
+                        }
+                        .padding(10)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .cornerRadius(10)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(groups, id: \.self) { group in
+                                    FilterButton(title: group, isSelected: selectedGroup == group) {
+                                        selectedGroup = group
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    
+                    if viewModel.isLoading && viewModel.cards.isEmpty {
+                        Spacer()
+                        ProgressView("Загрузка...")
+                        Spacer()
+                    } else if filteredCards.isEmpty {
+                        VStack(spacing: 20) {
+                            Spacer()
+                            Image(systemName: "creditcard.and.123")
+                                .font(.system(size: 60))
+                                .foregroundColor(.secondary)
+                            Text("Карт не найдено")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                            Button(action: { viewModel.loadCards() }) {
+                                Label("Обновить", systemImage: "arrow.clockwise")
+                            }
+                            Spacer()
+                        }
+                    } else {
+                        List {
+                            ForEach(filteredCards) { card in
+                                WhiteListCardRow(card: card) {
+                                    cardToDelete = card
+                                    showingDeleteConfirmation = true
+                                }
+                            }
+                        }
+                        .listStyle(InsetGroupedListStyle())
+                        .refreshable {
+                            viewModel.loadCards()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Белый список")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(action: { showAddCardSheet = true }) {
+                            Label("Добавить карту", systemImage: "plus")
+                        }
+                        Button(action: { showFilePicker = true }) {
+                            Label("Импорт из Excel", systemImage: "doc.badge.plus")
+                        }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            // Add Single Card Sheet
+            .sheet(isPresented: $showAddCardSheet) {
+                NavigationView {
+                    VStack(spacing: 0) {
+                        Form {
+                            Section(header: Text("Данные карты")) {
+                                TextField("Номер карты", text: $newCardNum)
+                                    .keyboardType(.numberPad)
+                                    .onChange(of: newCardNum) { newValue in
+                                        newCardNum = newValue.formattedCardNumber()
+                                    }
+                                TextField("Тип/Группа", text: $newGroup)
+                            }
+                        }
+                        
+                        Button(action: {
+                            let cleanNumber = newCardNum.replacingOccurrences(of: " ", with: "")
+                            viewModel.addSingleCard(cardNum: cleanNumber, typeCon: newGroup)
+                            newCardNum = ""
+                            newGroup = ""
+                        }) {
+                            if viewModel.isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                Text("Добавить в белый список")
+                                    .frame(maxWidth: .infinity)
+                                    .fontWeight(.bold)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .padding()
+                        .disabled(newCardNum.isEmpty || newGroup.isEmpty || viewModel.isLoading)
+                    }
+                    .navigationTitle("Новая карта")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Отмена") { showAddCardSheet = false }
+                        }
+                    }
+                    .onReceive(viewModel.successPublisher) { _ in
+                        showAddCardSheet = false
+                    }
+                    .alert("Ошибка", isPresented: Binding(
+                        get: { viewModel.errorMessage != nil },
+                        set: { if !$0 { viewModel.errorMessage = nil } }
+                    )) {
+                        Button("OK", role: .cancel) {}
+                    } message: {
+                        Text(viewModel.errorMessage ?? "")
+                    }
+                }
+            }
+            // File Picker
+            .fileImporter(
+                isPresented: $showFilePicker,
+                allowedContentTypes: [.spreadsheet, .commaSeparatedText],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    if let url = urls.first {
+                        viewModel.uploadWhiteListFile(fileURL: url)
+                    }
+                case .failure(let error):
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+            // Error Alert
+            .alert("Ошибка", isPresented: Binding(
+                get: { viewModel.errorMessage != nil && !showAddCardSheet },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+            .alert("Удаление карты", isPresented: $showingDeleteConfirmation) {
+                Button("Отмена", role: .cancel) {}
+                Button("Удалить", role: .destructive) {
+                    if let card = cardToDelete {
+                        viewModel.deleteCard(cardNum: card.cardNum)
+                    }
+                }
+            } message: {
+                Text("Вы уверены, что хотите удалить карту \(cardToDelete?.cardNum ?? "") из белого списка?")
+            }
+            .toast(message: $viewModel.toastMessage)
+        }
+    }
+}
+
+struct WhiteListCardRow: View {
+    let card: WhiteListCard
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card.cardNum)
+                    .font(.system(.body, design: .monospaced))
+                    .fontWeight(.medium)
+                Text(card.typeCon)
+                    .font(.caption)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.blue.opacity(0.8))
+                    .cornerRadius(4)
+            }
+            
+            Spacer()
+            
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+                    .foregroundColor(.red)
+            }
+            .buttonStyle(BorderlessButtonStyle())
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// Reuse FilterButton or define here if not global
+struct FilterButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(isSelected ? .bold : .regular)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(isSelected ? Color.blue : Color(.secondarySystemGroupedBackground))
+                .foregroundColor(isSelected ? .white : .primary)
+                .cornerRadius(20)
+        }
+    }
+}
+
+struct WhiteListView_Previews: PreviewProvider {
+    static var previews: some View {
+        WhiteListView()
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+ИТОГИ СБОРКИ
+================================================================================
+✅ Успешно прочитано: 33
+❌ Ошибок чтения: 0
+📊 Всего обработано: 33
+
+🕒 Дата завершения: 2026-03-07 18:12:24
+================================================================================

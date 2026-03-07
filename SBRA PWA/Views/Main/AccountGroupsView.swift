@@ -217,8 +217,13 @@ struct AccountGroupModal: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
+                    Button(action: {
                         isPresented = false
+                    }) {
+                        HStack {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .bold)) // Жирная и стрелка
+                        }
                     }
                 }
             }

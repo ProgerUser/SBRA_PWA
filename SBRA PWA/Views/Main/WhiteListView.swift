@@ -157,7 +157,14 @@ struct WhiteListView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Отмена") { showAddCardSheet = false }
+                            Button(action: {
+                                showAddCardSheet = false // Исправлено: showAddCardSheet вместо isPresented
+                            }) {
+                                HStack {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 16, weight: .bold))
+                                }
+                            }
                         }
                     }
                     .onReceive(viewModel.successPublisher) { _ in
