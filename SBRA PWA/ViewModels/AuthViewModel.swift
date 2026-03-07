@@ -1,3 +1,4 @@
+// SBRA PWA/ViewModels/AuthViewModel.swift
 import Foundation
 import Combine
 
@@ -12,13 +13,21 @@ class AuthViewModel: ObservableObject {
     private let apiService = APIService.shared
     
     init() {
+        // Проверяем, есть ли сохраненный токен
         isAuthenticated = TokenManager.shared.isAuthenticated
         if isAuthenticated {
             username = TokenManager.shared.getUsername() ?? ""
+            print("AuthViewModel: User is authenticated: \(username)")
+        } else {
+            print("AuthViewModel: No authenticated user")
         }
         
         // Подписка на уведомление о разлогине
-        NotificationCenter.default.addObserver(forName: APIService.unauthorizedNotification, object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(
+            forName: APIService.unauthorizedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             print("AuthViewModel: Received unauthorized notification, logging out...")
             self?.logout()
         }
@@ -42,18 +51,34 @@ class AuthViewModel: ObservableObject {
                     break
                 case .failure(let error):
                     self?.errorMessage = error.localizedDescription
+                    print("AuthViewModel: Login failed - \(error.localizedDescription)")
                 }
             } receiveValue: { [weak self] token in
                 TokenManager.shared.saveToken(token.accessToken, username: self?.username ?? "")
-                self?.isAuthenticated = true
+                
+                // Обновляем состояние и отправляем уведомление
+                DispatchQueue.main.async {
+                    self?.isAuthenticated = true
+                    NotificationCenter.default.post(name: .authStateChanged, object: nil)
+                    print("AuthViewModel: Successfully logged in as \(self?.username ?? "")")
+                }
             }
             .store(in: &cancellables)
     }
     
     func logout() {
+        print("AuthViewModel: Logging out...")
         TokenManager.shared.clearToken()
-        isAuthenticated = false
+        
+        // Очищаем поля
         username = ""
         password = ""
+        
+        // Обновляем состояние и отправляем уведомление
+        DispatchQueue.main.async { [weak self] in
+            self?.isAuthenticated = false
+            NotificationCenter.default.post(name: .authStateChanged, object: nil)
+            print("AuthViewModel: Logged out successfully")
+        }
     }
 }

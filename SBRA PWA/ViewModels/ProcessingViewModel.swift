@@ -1,11 +1,10 @@
 // SBRA PWA/ViewModels/ProcessingViewModel.swift
-
 import Foundation
 import Combine
 import UIKit
 import UniformTypeIdentifiers
 
-class ProcessingViewModel: ObservableObject {
+class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляем ToastCapable
     @Published var processings: [AvailableProcessing] = []
     @Published var selectedProcessing: AvailableProcessing?
     @Published var isLoading = false
@@ -15,9 +14,7 @@ class ProcessingViewModel: ObservableObject {
     @Published var uploadResult: UploadResult?
     @Published var availableGroups: [String] = []
     @Published var cardCount: Int?
-    @Published var toastMessage: String?
-    
-    // Добавляем эту переменную для управления file picker из UIKit
+    @Published var toast: Toast? // Изменено с toastMessage
     @Published var showFilePicker = false
     
     let successPublisher = PassthroughSubject<Void, Never>()
@@ -45,6 +42,7 @@ class ProcessingViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] processings in
                 self?.processings = processings
@@ -61,7 +59,6 @@ class ProcessingViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    // ИСПРАВЛЕНО: Теперь показывает file picker
     func selectFile() {
         showFilePicker = true
     }
@@ -85,6 +82,7 @@ class ProcessingViewModel: ObservableObject {
                     self?.isUploading = false
                     if case .failure(let error) = completion {
                         self?.errorMessage = error.localizedDescription
+                        self?.showError(error.localizedDescription)
                         self?.uploadResult = UploadResult(
                             success: false,
                             message: error.localizedDescription,
@@ -98,12 +96,14 @@ class ProcessingViewModel: ObservableObject {
                         cardCount: result.count
                     )
                     self?.selectedFile = nil
+                    self?.showSuccess("Файл успешно загружен")
                     self?.checkCardCount()
                 }
                 .store(in: &cancellables)
         } catch {
             isUploading = false
             errorMessage = error.localizedDescription
+            showError(error.localizedDescription)
         }
     }
     
@@ -130,10 +130,10 @@ class ProcessingViewModel: ObservableObject {
             .sink { [weak self] completion in
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                // Задача запущена
-                self?.triggerToast("Задача успешно запущена")
+                self?.showSuccess("Задача успешно запущена")
                 self?.successPublisher.send()
             }
             .store(in: &cancellables)
@@ -143,14 +143,5 @@ class ProcessingViewModel: ObservableObject {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: size)
-    }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
-        }
     }
 }

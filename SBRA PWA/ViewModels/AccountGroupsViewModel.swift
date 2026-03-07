@@ -1,11 +1,13 @@
+// SBRA PWA/ViewModels/AccountGroupsViewModel.swift
 import Foundation
 import Combine
+import SwiftUI
 
-class AccountGroupsViewModel: ObservableObject {
+class AccountGroupsViewModel: ObservableObject, ToastCapable {
     @Published var groups: [AccountGroup] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var toastMessage: String?
+    @Published var toast: Toast?
     @Published var formError: String?
     @Published var selectedGroup: AccountGroup?
     @Published var isEditing = false
@@ -44,9 +46,10 @@ class AccountGroupsViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно создана")
+                self?.showSuccess("Группа успешно создана")
                 self?.successPublisher.send()
                 self?.loadGroups()
             }
@@ -62,9 +65,10 @@ class AccountGroupsViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно обновлена")
+                self?.showSuccess("Группа успешно обновлена")
                 self?.successPublisher.send()
                 self?.loadGroups()
             }
@@ -80,9 +84,10 @@ class AccountGroupsViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно удалена")
+                self?.showSuccess("Группа успешно удалена")
                 self?.successPublisher.send()
                 self?.loadGroups()
             }
@@ -96,15 +101,6 @@ class AccountGroupsViewModel: ObservableObject {
         return groups.filter {
             $0.accNum.localizedCaseInsensitiveContains(searchText) ||
             $0.grpName.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
         }
     }
 }

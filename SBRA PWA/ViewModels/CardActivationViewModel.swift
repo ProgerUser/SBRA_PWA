@@ -1,8 +1,9 @@
+// SBRA PWA/ViewModels/CardActivationViewModel.swift
 import Foundation
 import Combine
 import UniformTypeIdentifiers
 
-class CardActivationViewModel: ObservableObject {
+class CardActivationViewModel: ObservableObject, ToastCapable {
     @Published var activationResult: BatchActivationResult?
     @Published var history: [ActivationHistory] = []
     @Published var isLoading = false
@@ -10,7 +11,7 @@ class CardActivationViewModel: ObservableObject {
     @Published var isLoadingHistory = false
     @Published var errorMessage: String?
     @Published var selectedFile: URL?
-    @Published var toastMessage: String?
+    @Published var toast: Toast?  // Изменено с toastMessage
     
     // Фильтры
     @Published var filterStartDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
@@ -35,6 +36,7 @@ class CardActivationViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] result in
                 let batchResult = BatchActivationResult(
@@ -45,12 +47,15 @@ class CardActivationViewModel: ObservableObject {
                 )
                 self?.activationResult = batchResult
                 let displayMessage = result.success ? "Карта успешно активирована" : (result.message.isEmpty ? "Ошибка активации" : result.message)
-                self?.triggerToast(displayMessage)
+                
                 if result.success {
+                    self?.showSuccess(displayMessage)
                     HapticManager.shared.success()
                 } else {
+                    self?.showError(displayMessage)
                     HapticManager.shared.warning()
                 }
+                
                 self?.successPublisher.send()
                 self?.loadHistory()
             }
@@ -76,11 +81,12 @@ class CardActivationViewModel: ObservableObject {
                     self?.isUploading = false
                     if case .failure(let error) = completion {
                         self?.errorMessage = error.localizedDescription
+                        self?.showError(error.localizedDescription)
                     }
                 } receiveValue: { [weak self] result in
                     self?.activationResult = result
                     self?.selectedFile = nil
-                    self?.triggerToast("Файл обработан. Успешно: \(result.success)")
+                    self?.showSuccess("Файл обработан. Успешно: \(result.success)")
                     self?.successPublisher.send()
                     self?.loadHistory()
                 }
@@ -88,6 +94,7 @@ class CardActivationViewModel: ObservableObject {
         } catch {
             isUploading = false
             errorMessage = error.localizedDescription
+            showError(error.localizedDescription)
         }
     }
     
@@ -111,6 +118,7 @@ class CardActivationViewModel: ObservableObject {
                 self?.isLoadingHistory = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] history in
                 self?.history = history
@@ -125,9 +133,10 @@ class CardActivationViewModel: ObservableObject {
             .sink { [weak self] completion in
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("История очищена")
+                self?.showSuccess("История очищена")
                 self?.loadHistory()
             }
             .store(in: &cancellables)
@@ -135,6 +144,17 @@ class CardActivationViewModel: ObservableObject {
     
     func cleanupHistory(days: Int) {
         // Реализация очистки старше N дней
+        let calendar = Calendar.current
+        let cutoffDate = calendar.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        
+        // Фильтруем историю, оставляя только записи новее cutoffDate
+        history = history.filter { item in
+            let dateFormatter = ISO8601DateFormatter()
+            guard let itemDate = dateFormatter.date(from: item.createdAt) else { return true }
+            return itemDate > cutoffDate
+        }
+        
+        showSuccess("История очищена от записей старше \(days) дней")
     }
     
     func setFilterToday() {
@@ -153,14 +173,5 @@ class CardActivationViewModel: ObservableObject {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: size)
-    }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
-        }
     }
 }

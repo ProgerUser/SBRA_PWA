@@ -1,3 +1,4 @@
+// SBRA PWA/Views/Main/CardActivationView.swift
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -20,13 +21,13 @@ struct CardActivationView: View {
                     HStack {
                         Rectangle()
                             .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
+                            .foregroundColor(Theme.textTertiary.opacity(0.3))
                         Text("ИЛИ")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundColor(Theme.textSecondary)
                         Rectangle()
                             .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
+                            .foregroundColor(Theme.textTertiary.opacity(0.3))
                     }
                     .padding(.horizontal)
                     
@@ -46,14 +47,17 @@ struct CardActivationView: View {
                 }
                 .padding()
             }
+            .background(MeshBackground())
             .navigationTitle("Активация карт")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         viewModel.loadHistory()
                     }) {
                         Image(systemName: "arrow.clockwise")
+                            .font(.headline)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
@@ -65,9 +69,12 @@ struct CardActivationView: View {
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
-                    viewModel.processExcelFile(url: url)
+                    withAnimation {
+                        viewModel.processExcelFile(url: url)
+                    }
                 case .failure(let error):
                     viewModel.errorMessage = error.localizedDescription
+                    viewModel.showError(error.localizedDescription)
                 }
             }
             .alert("Ошибка", isPresented: Binding(
@@ -80,7 +87,7 @@ struct CardActivationView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
-            .toast(message: $viewModel.toastMessage)
+            .toast(toast: $viewModel.toast)  // ИСПРАВЛЕНО: message: → toast:
         }
     }
 }
@@ -90,45 +97,45 @@ struct SingleActivationSection: View {
     @ObservedObject var viewModel: CardActivationViewModel
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Активация одной карты")
-                .font(.headline)
-            
-            VStack(spacing: 16) {
-                TextField("Введите номер карты", text: $cardNumber)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .keyboardType(.numberPad)
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Активация одной карты", systemImage: "creditcard")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
                 
-                Button(action: {
-                    let cleanNumber = cardNumber.replacingOccurrences(of: " ", with: "")
-                    viewModel.activateSingleCard(cleanNumber)
-                    cardNumber = ""
-                }) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        Text("Активировать карту")
+                VStack(spacing: 16) {
+                    TextField("Введите номер карты", text: $cardNumber)
+                        .textFieldStyle(ModernTextFieldStyle())
+                        .keyboardType(.numberPad)
+                        .onChange(of: cardNumber) { newValue in
+                            cardNumber = newValue.formattedCardNumber()
+                        }
+                    
+                    Button(action: {
+                        let cleanNumber = cardNumber.replacingOccurrences(of: " ", with: "")
+                        viewModel.activateSingleCard(cleanNumber)
+                        cardNumber = ""
+                    }) {
+                        if viewModel.isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            HStack {
+                                Image(systemName: "bolt.fill")
+                                Text("Активировать карту")
+                            }
                             .frame(maxWidth: .infinity)
-                            .fontWeight(.bold)
+                        }
                     }
+                    .buttonStyle(GlassButtonStyle())
+                    .disabled(cardNumber.isEmpty || viewModel.isLoading)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(cardNumber.isEmpty || viewModel.isLoading)
+                
+                Text("Номер карты будет автоматически очищен от пробелов")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
             }
-            .onChange(of: cardNumber) { newValue in
-                cardNumber = newValue.formattedCardNumber()
-            }
-            
-            Text("Номер карты будет автоматически очищен от пробелов")
-                .font(.caption)
-                .foregroundColor(.gray)
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
 
@@ -137,67 +144,85 @@ struct BatchActivationSection: View {
     @Binding var showingFilePicker: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Пакетная активация из Excel")
-                .font(.headline)
-            
-            HStack {
-                Image(systemName: "info.circle")
-                    .foregroundColor(.blue)
-                Text("Загрузите Excel файл с номерами карт в первом столбце")
-                    .font(.caption)
-            }
-            .padding()
-            .background(Color.blue.opacity(0.1))
-            .cornerRadius(8)
-            
-            if let file = viewModel.selectedFile {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Пакетная активация", systemImage: "doc.on.doc")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
+                
                 HStack {
-                    Image(systemName: "doc")
-                    Text(file.lastPathComponent)
-                    Spacer()
-                    Text(viewModel.formatFileSize(file.fileSize))
-                        .foregroundColor(.gray)
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(Theme.info)
+                    Text("Загрузите Excel файл с номерами карт в первом столбце")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            HStack {
-                Button(action: { showingFilePicker = true }) {
-                    Label("Выбрать файл", systemImage: "doc.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                .background(Theme.info.opacity(0.1))
+                .cornerRadius(12)
                 
-                if viewModel.selectedFile != nil {
-                    Button(action: {
-                        viewModel.processSelectedFile()
-                    }) {
-                        if viewModel.isUploading {
-                            ProgressView()
-                        } else {
-                            Label("Загрузить", systemImage: "arrow.up.doc")
-                                .frame(maxWidth: .infinity)
-                        }
+                if let file = viewModel.selectedFile {
+                    HStack {
+                        Image(systemName: "doc.fill")
+                            .foregroundColor(Theme.primary)
+                        Text(file.lastPathComponent)
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textPrimary)
+                        Spacer()
+                        Text(viewModel.formatFileSize(file.fileSize))
+                            .font(.caption)
+                            .foregroundColor(Theme.textTertiary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isUploading)
+                    .padding()
+                    .background(Theme.cardBackgroundSecondary)
+                    .cornerRadius(12)
+                    .transition(.slide.combined(with: .opacity))
+                }
+                
+                HStack {
+                    Button(action: { showingFilePicker = true }) {
+                        Label("Выбрать файл", systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
                     
-                    Button(action: {
-                        viewModel.clearSelectedFile()
-                    }) {
-                        Image(systemName: "xmark")
+                    if viewModel.selectedFile != nil {
+                        Button(action: {
+                            withAnimation {
+                                viewModel.processSelectedFile()
+                            }
+                        }) {
+                            if viewModel.isUploading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Label("Загрузить", systemImage: "arrow.up.doc")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .disabled(viewModel.isUploading)
+                        
+                        Button(action: {
+                            withAnimation {
+                                viewModel.clearSelectedFile()
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.headline)
+                                .foregroundColor(Theme.textSecondary)
+                                .frame(width: 50, height: 50)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Theme.cardBackground)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
-                    .buttonStyle(.bordered)
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
 
@@ -205,55 +230,77 @@ struct ActivationResultView: View {
     let result: BatchActivationResult
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Результаты активации")
-                .font(.headline)
-            
-            HStack {
-                ResultCard(title: "Всего", value: result.total, color: .blue)
-                ResultCard(title: "Успешно", value: result.success, color: .green)
-                ResultCard(title: "Ошибки", value: result.failed, color: .red)
-            }
-            
-            if !result.results.isEmpty {
-                DisclosureGroup("Детали") {
-                    ForEach(result.results.indices, id: \.self) { index in
-                        let item = result.results[index]
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(item.cardNumber)
-                                    .font(.caption)
-                                    .font(.system(.caption, design: .monospaced))
-                                
-                                Spacer()
-                                
-                                Image(systemName: item.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(item.success ? .green : .red)
-                            }
-                            
-                            Text(item.message)
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                            
-                            if let details = item.details, let code = details.responseCode {
-                                Text("Код: \(code)")
-                                    .font(.caption2)
-                                    .foregroundColor(.gray)
-                            }
-                            
-                            if index < result.results.count - 1 {
-                                Divider()
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Результаты активации", systemImage: "chart.bar.fill")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
+                
+                HStack(spacing: 12) {
+                    ResultCard(
+                        title: "Всего",
+                        value: result.total,
+                        color: Theme.info
+                    )
+                    
+                    ResultCard(
+                        title: "Успешно",
+                        value: result.success,
+                        color: Theme.success
+                    )
+                    
+                    ResultCard(
+                        title: "Ошибки",
+                        value: result.failed,
+                        color: Theme.danger
+                    )
+                }
+                
+                if !result.results.isEmpty {
+                    DisclosureGroup {
+                        VStack(spacing: 12) {
+                            ForEach(result.results.indices, id: \.self) { index in
+                                let item = result.results[index]
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text(item.cardNumber)
+                                            .font(.system(.subheadline, design: .monospaced))
+                                            .foregroundColor(Theme.textPrimary)
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: item.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                            .foregroundColor(item.success ? Theme.success : Theme.danger)
+                                            .font(.title3)
+                                    }
+                                    
+                                    if !item.message.isEmpty {
+                                        Text(item.message)
+                                            .font(.caption)
+                                            .foregroundColor(Theme.textSecondary)
+                                    }
+                                    
+                                    if let details = item.details, let code = details.responseCode {
+                                        Text("Код ответа: \(code)")
+                                            .font(.caption2)
+                                            .foregroundColor(Theme.textTertiary)
+                                    }
+                                    
+                                    if index < result.results.count - 1 {
+                                        Divider()
+                                    }
+                                }
+                                .padding(.vertical, 4)
                             }
                         }
-                        .padding(.vertical, 4)
+                    } label: {
+                        Text("Показать детали (\(result.results.count))")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
 
@@ -263,19 +310,21 @@ struct ResultCard: View {
     let color: Color
     
     var body: some View {
-        VStack {
+        VStack(spacing: 8) {
             Text(title)
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundColor(Theme.textSecondary)
+            
             Text("\(value)")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(.title2.weight(.bold))
                 .foregroundColor(color)
         }
         .frame(maxWidth: .infinity)
-        .padding()
-        .background(color.opacity(0.1))
-        .cornerRadius(8)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(color.opacity(0.1))
+        )
     }
 }
 
@@ -285,64 +334,82 @@ struct ActivationHistoryView: View {
     @State private var showingClearHistoryConfirmation = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("История активаций")
-                    .font(.headline)
-                
-                Spacer()
-                
-                Button(action: { showingFilters.toggle() }) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                }
-                
-                Button(action: {
-                    showingClearHistoryConfirmation = true
-                }) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red)
-                }
-            }
-            .alert("Очистка истории", isPresented: $showingClearHistoryConfirmation) {
-                Button("Отмена", role: .cancel) {}
-                Button("Очистить", role: .destructive) {
-                    viewModel.clearHistory()
-                }
-            } message: {
-                Text("Вы уверены, что хотите полностью очистить историю активаций?")
-            }
-            
-            if showingFilters {
-                HistoryFiltersView(viewModel: viewModel)
-            }
-            
-            if viewModel.isLoadingHistory {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
+                    Label("История активаций", systemImage: "clock.arrow.circlepath")
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(Theme.textPrimary)
+                    
                     Spacer()
-                    ProgressView()
-                    Spacer()
+                    
+                    Button(action: {
+                        withAnimation {
+                            showingFilters.toggle()
+                        }
+                    }) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title3)
+                            .foregroundColor(Theme.primary)
+                    }
+                    
+                    Button(action: {
+                        showingClearHistoryConfirmation = true
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.title3)
+                            .foregroundColor(Theme.danger)
+                    }
                 }
-                .padding()
-            } else if viewModel.history.isEmpty {
-                Text("Нет истории активаций")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                
+                if showingFilters {
+                    HistoryFiltersView(viewModel: viewModel)
+                }
+                
+                if viewModel.isLoadingHistory {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(Theme.primary)
+                        Spacer()
+                    }
+                    .padding()
+                } else if viewModel.history.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "clock")
+                            .font(.largeTitle)
+                            .foregroundColor(Theme.textTertiary)
+                        Text("Нет истории активаций")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
+                    }
                     .frame(maxWidth: .infinity)
                     .padding()
-            } else {
-                Text("Найдено записей: \(viewModel.history.count)")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                
-                ForEach(viewModel.history) { item in
-                    HistoryActivationRow(item: item)
+                } else {
+                    Text("Найдено записей: \(viewModel.history.count)")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
+                    
+                    LazyVStack(spacing: 12) {
+                        ForEach(viewModel.history) { item in
+                            HistoryActivationRow(item: item)
+                            
+                            if item.id != viewModel.history.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .alert("Очистка истории", isPresented: $showingClearHistoryConfirmation) {
+            Button("Отмена", role: .cancel) {}
+            Button("Очистить", role: .destructive) {
+                viewModel.clearHistory()
+            }
+        } message: {
+            Text("Вы уверены, что хотите полностью очистить историю активаций?")
+        }
     }
 }
 
@@ -350,36 +417,47 @@ struct HistoryFiltersView: View {
     @ObservedObject var viewModel: CardActivationViewModel
     
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             DatePicker("С", selection: $viewModel.filterStartDate, displayedComponents: .date)
+                .datePickerStyle(.compact)
+                .foregroundColor(Theme.textPrimary)
+            
             DatePicker("По", selection: $viewModel.filterEndDate, displayedComponents: .date)
+                .datePickerStyle(.compact)
+                .foregroundColor(Theme.textPrimary)
             
             HStack {
                 Button("Сегодня") {
-                    viewModel.setFilterToday()
+                    withAnimation {
+                        viewModel.setFilterToday()
+                    }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle())
                 
                 Button("7 дней") {
-                    viewModel.setFilterWeek()
+                    withAnimation {
+                        viewModel.setFilterWeek()
+                    }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle())
                 
-                Button("Очистить старше 30 дней") {
-                    viewModel.cleanupHistory(days: 30)
+                Button("Очистить >30 дней") {
+                    withAnimation {
+                        viewModel.cleanupHistory(days: 30)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .foregroundColor(.orange)
+                .buttonStyle(SecondaryButtonStyle())
+                .foregroundColor(Theme.warning)
             }
             
-            Button("Применить") {
+            Button("Применить фильтры") {
                 viewModel.loadHistory()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(GlassButtonStyle())
         }
         .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(8)
+        .background(Theme.cardBackgroundSecondary.opacity(0.5))
+        .cornerRadius(16)
     }
 }
 
@@ -387,36 +465,37 @@ struct HistoryActivationRow: View {
     let item: ActivationHistory
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(item.formattedDate)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundColor(Theme.textSecondary)
                 
                 Spacer()
                 
                 Text(item.success == 1 ? "Успех" : "Ошибка")
                     .font(.caption2)
-                    .padding(4)
-                    .background(item.success == 1 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-                    .foregroundColor(item.success == 1 ? .green : .red)
-                    .cornerRadius(4)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(item.success == 1 ? Theme.success.opacity(0.1) : Theme.danger.opacity(0.1))
+                    .foregroundColor(item.success == 1 ? Theme.success : Theme.danger)
+                    .cornerRadius(8)
             }
             
-            Text(item.cardNumber ?? item.cleanCard ?? "")
-                .font(.subheadline)
+            Text(item.cardNumber ?? item.cleanCard ?? "—")
                 .font(.system(.subheadline, design: .monospaced))
+                .foregroundColor(Theme.textPrimary)
             
-            if let message = item.message {
+            if let message = item.message, !message.isEmpty {
                 Text(message)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundColor(Theme.textTertiary)
             }
             
             if let details = item.details, let code = details.responseCode {
                 Text("Код: \(code)")
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundColor(Theme.info)
             }
         }
         .padding(.vertical, 8)

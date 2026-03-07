@@ -1,35 +1,38 @@
+// SBRA PWA/Views/Main/ProcessingView.swift
 import SwiftUI
-
-// SBRA PWA/Views/Main/ProcessingView.swift - часть с fileImporter
 
 struct ProcessingView: View {
     @StateObject private var viewModel = ProcessingViewModel()
     @State private var showingProcessingModal = false
-    // Убираем @State private var showingFilePicker = false, так как теперь используем viewModel.showFilePicker
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 16) {
-                    // Секция загрузки Excel файла
+                VStack(spacing: 24) {
                     ExcelUploadSection(viewModel: viewModel)
+                        .transition(.scale.combined(with: .opacity))
                     
-                    // Секция доступных обработок
                     ProcessingsSection(
                         viewModel: viewModel,
                         showingModal: $showingProcessingModal
                     )
                 }
-                .padding()
+                .padding(.horizontal)
+                .padding(.vertical, 8)
             }
+            .background(MeshBackground())
             .navigationTitle("Обработки")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        viewModel.loadProcessings()
+                        withAnimation(.spring()) {
+                            viewModel.loadProcessings()
+                        }
                     }) {
                         Image(systemName: "arrow.clockwise")
+                            .font(.headline)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
@@ -42,158 +45,194 @@ struct ProcessingView: View {
                     )
                 }
             }
-            // ИСПРАВЛЕНО: Используем viewModel.showFilePicker вместо локальной переменной
             .fileImporter(
-                isPresented: $viewModel.showFilePicker,  // ← Изменено здесь
+                isPresented: $viewModel.showFilePicker,
                 allowedContentTypes: [.excel],
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
-                    viewModel.handleSelectedFile(url: url)
+                    withAnimation {
+                        viewModel.handleSelectedFile(url: url)
+                    }
                 case .failure(let error):
                     viewModel.errorMessage = error.localizedDescription
+                    viewModel.showError(error.localizedDescription)
                 }
             }
             .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil && !showingProcessingModal },
+                get: { viewModel.errorMessage != nil },
                 set: { if !$0 { viewModel.errorMessage = nil } }
             )) {
-                Button("OK") {
-                    viewModel.errorMessage = nil
-                }
+                Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
-            .toast(message: $viewModel.toastMessage)
+            .toast(toast: $viewModel.toast)
         }
     }
 }
 
+// MARK: - Excel Upload Section
 struct ExcelUploadSection: View {
     @ObservedObject var viewModel: ProcessingViewModel
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundColor(.yellow)
-                Text("Для группы STREAM_RUSLAN необходимо загрузить Excel файл")
-                    .font(.subheadline)
-            }
-            .padding()
-            .background(Color.yellow.opacity(0.1))
-            .cornerRadius(8)
-            
-            if let file = viewModel.selectedFile {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Загрузка данных", systemImage: "externaldrive.badge.plus")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
+                
+                // Информационный блок
                 HStack {
-                    Image(systemName: "doc")
-                    Text(file.lastPathComponent)
-                    Spacer()
-                    Text(viewModel.formatFileSize(file.fileSize))
-                        .foregroundColor(.gray)
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(Theme.info)
+                    Text("Для группы STREAM_RUSLAN необходим Excel файл")
+                        .font(.subheadline)
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            HStack {
-                Button(action: { viewModel.selectFile() }) {
-                    Label("Выбрать файл", systemImage: "doc.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                .background(Theme.info.opacity(0.1))
+                .cornerRadius(12)
                 
-                if viewModel.selectedFile != nil {
-                    Button(action: { viewModel.uploadFile() }) {
-                        if viewModel.isUploading {
-                            ProgressView()
-                        } else {
-                            Label("Загрузить", systemImage: "arrow.up.doc")
-                                .frame(maxWidth: .infinity)
+                if let file = viewModel.selectedFile {
+                    HStack {
+                        Image(systemName: "doc.fill")
+                            .foregroundColor(Theme.primary)
+                        Text(file.lastPathComponent)
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textPrimary)
+                        Spacer()
+                        Text(viewModel.formatFileSize(file.fileSize))
+                            .font(.caption)
+                            .foregroundColor(Theme.textTertiary)
+                    }
+                    .padding()
+                    .background(Theme.cardBackgroundSecondary)
+                    .cornerRadius(12)
+                    .transition(.slide.combined(with: .opacity))
+                }
+                
+                HStack {
+                    Button(action: { viewModel.selectFile() }) {
+                        Label("Выбрать файл", systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    
+                    if viewModel.selectedFile != nil {
+                        Button(action: {
+                            withAnimation {
+                                viewModel.uploadFile()
+                            }
+                        }) {
+                            if viewModel.isUploading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Label("Загрузить", systemImage: "arrow.up.doc")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .disabled(viewModel.isUploading)
+                    }
+                }
+                
+                if let result = viewModel.uploadResult {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .foregroundColor(result.success ? Theme.success : Theme.danger)
+                                .font(.title3)
+                            Text(result.message)
+                                .font(.subheadline)
+                                .foregroundColor(Theme.textPrimary)
+                        }
+                        
+                        if let cardCount = result.cardCount {
+                            Text("\(cardCount) карт(ы) в файле")
+                                .font(.caption)
+                                .foregroundColor(Theme.textSecondary)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isUploading)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(result.success ? Theme.success.opacity(0.1) : Theme.danger.opacity(0.1))
+                    )
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
-            
-            if let result = viewModel.uploadResult {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundColor(result.success ? .green : .red)
-                        Text(result.message)
-                            .font(.subheadline)
-                    }
-                    
-                    if let cardCount = result.cardCount {
-                        Text("В таблице карт: \(cardCount)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                }
-                .padding()
-                .background(result.success ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Divider()
         }
     }
 }
 
+// MARK: - Processings Section
 struct ProcessingsSection: View {
     @ObservedObject var viewModel: ProcessingViewModel
     @Binding var showingModal: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Доступные обработки")
-                    .font(.headline)
-                Spacer()
-                Text("\(viewModel.processings.count)")
-                    .font(.caption)
-                    .padding(5)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .clipShape(Circle())
-            }
-            
-            if viewModel.isLoading {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
+                    Label("Доступные обработки", systemImage: "gearshape.2.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(Theme.textPrimary)
+                    
                     Spacer()
-                    ProgressView()
-                    Spacer()
+                    
+                    Text("\(viewModel.processings.count)")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Theme.primary)
+                        .clipShape(Capsule())
                 }
-                .padding()
-            } else if viewModel.processings.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "tray")
-                        .font(.largeTitle)
-                        .foregroundColor(.gray)
-                    Text("Нет доступных обработок")
-                        .foregroundColor(.gray)
-                    Button("Загрузить") {
-                        viewModel.loadProcessings()
+                
+                if viewModel.isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(Theme.primary)
+                            .scaleEffect(1.2)
+                        Spacer()
                     }
-                    .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-            } else {
-                LazyVStack(spacing: 8) {
-                    ForEach(viewModel.processings) { processing in
-                        ProcessingRow(
-                            processing: processing,
-                            onSelect: {
-                                viewModel.selectedProcessing = processing
-                                showingModal = true
+                    .padding()
+                } else if viewModel.processings.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "tray")
+                            .font(.largeTitle)
+                            .foregroundColor(Theme.textTertiary)
+                        Text("Нет доступных обработок")
+                            .foregroundColor(Theme.textSecondary)
+                        Button("Загрузить") {
+                            withAnimation {
+                                viewModel.loadProcessings()
                             }
-                        )
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .frame(width: 200)
+                    }
+                    .padding()
+                } else {
+                    LazyVStack(spacing: 8) {
+                        ForEach(viewModel.processings) { processing in
+                            ProcessingRow(
+                                processing: processing,
+                                onSelect: {
+                                    viewModel.selectedProcessing = processing
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                        showingModal = true
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -201,6 +240,7 @@ struct ProcessingsSection: View {
     }
 }
 
+// MARK: - Processing Row
 struct ProcessingRow: View {
     let processing: AvailableProcessing
     let onSelect: () -> Void
@@ -208,30 +248,42 @@ struct ProcessingRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack {
+                // Иконка слева
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.primary.opacity(0.1))
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Image(systemName: processing.code == "STREAM_RUSLAN" ? "externaldrive" : "doc.text.magnifyingglass")
+                            .foregroundColor(Theme.primary)
+                            .font(.title3)
+                    )
+                
                 VStack(alignment: .leading, spacing: 4) {
                     Text(processing.name)
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundColor(Theme.textPrimary)
                     
                     if let description = processing.description {
                         Text(description)
                             .font(.caption)
-                            .foregroundColor(.gray)
-                            .lineLimit(1)
+                            .foregroundColor(Theme.textTertiary)
                     }
                     
                     HStack {
                         Text(processing.code)
                             .font(.caption2)
-                            .padding(4)
-                            .background(Color.gray.opacity(0.2))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.textTertiary.opacity(0.2))
                             .cornerRadius(4)
                         
                         if processing.code == "STREAM_RUSLAN" {
                             Text("требуется файл")
                                 .font(.caption2)
-                                .padding(4)
-                                .background(Color.yellow.opacity(0.2))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Theme.warning.opacity(0.2))
+                                .foregroundColor(Theme.warning)
                                 .cornerRadius(4)
                         }
                     }
@@ -240,99 +292,17 @@ struct ProcessingRow: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .foregroundColor(.blue)
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(Theme.textTertiary)
             }
             .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(10)
-            .shadow(color: .gray.opacity(0.1), radius: 5)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Theme.cardBackground)
+                    .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+            )
         }
-    }
-}
-
-struct ProcessingDetailModal: View {
-    let processing: AvailableProcessing
-    @ObservedObject var viewModel: ProcessingViewModel
-    @Binding var isPresented: Bool
-    @State private var parameters = ""
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                Form {
-                    if processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0 {
-                        Section {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .foregroundColor(.yellow)
-                                Text("Для обработки STREAM_RUSLAN необходимо сначала загрузить Excel файл")
-                                    .font(.caption)
-                            }
-                        }
-                    }
-                    
-                    Section(header: Text("Параметры")) {
-                        TextField("Группа (например: STREAM_%)", text: $parameters)
-                        
-                        Picker("Выберите из истории", selection: $parameters) {
-                            Text("").tag("")
-                            ForEach(viewModel.availableGroups, id: \.self) { group in
-                                Text(group).tag(group)
-                            }
-                        }
-                    }
-                    
-                    Section {
-                        Text("Выполняется процедура: \(processing.description ?? "")")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                Button(action: {
-                    viewModel.executeProcessing(parameters: parameters)
-                }) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        Text("Запустить обработку")
-                            .frame(maxWidth: .infinity)
-                            .fontWeight(.bold)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding()
-                .disabled(processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0 || viewModel.isLoading)
-            }
-            .navigationTitle(processing.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(action: {
-                        isPresented = false
-                    }) {
-                        HStack {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .bold)) // Жирная и стрелка
-                        }
-                    }
-                }
-            }
-            .onReceive(viewModel.successPublisher) { _ in
-                isPresented = false
-            }
-            .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.errorMessage = nil } }
-            )) {
-                Button("OK") {
-                    viewModel.errorMessage = nil
-                }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
-            }
-        }
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(1.0)
     }
 }

@@ -1,9 +1,9 @@
 ================================================================================
 СБОРКА ВСЕ SWIFT ФАЙЛЫ
 ================================================================================
-📅 Дата: 2026-03-07 18:12:24
+📅 Дата: 2026-03-07 21:41:58
 📂 Путь проекта: /Users/saidpaculia/Desktop/SBRA_PWA
-📊 Всего файлов: 33
+📊 Всего файлов: 38
 ================================================================================
 
 
@@ -90,34 +90,59 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 FILE: SBRA PWA/App/SceneDelegate.swift
 ================================================================================
 
+// SBRA PWA/App/SceneDelegate.swift
 import UIKit
 import SwiftUI
+import Combine
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     
     var window: UIWindow?
     private var authViewModel = AuthViewModel()
+    private var cancellables = Set<AnyCancellable>()
     
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = (scene as? UIWindowScene) else { return }
         
-        // Устанавливаем UIHostingController
+        // Создаем окно
         let window = UIWindow(windowScene: windowScene)
         window.backgroundColor = .systemBackground
         
-        // Определяем начальный экран
-        let rootView: any View
+        self.window = window
+        
+        // Определяем начальный экран и показываем окно
+        updateRootViewController(for: window)
+        window.makeKeyAndVisible()
+        
+        // Подписываемся на изменения статуса аутентификации
+        authViewModel.$isAuthenticated
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isAuthenticated in
+                guard let window = self?.window else { return }
+                print("SceneDelegate: Auth state changed to isAuthenticated=\(isAuthenticated)")
+                // Немедленно обновляем корневой контроллер
+                self?.updateRootViewController(for: window)
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func updateRootViewController(for window: UIWindow) {
+        let rootView: AnyView
+        
         if authViewModel.isAuthenticated {
             print("SceneDelegate: Authenticated, showing MainTabView")
-            rootView = MainTabView()
+            rootView = AnyView(MainTabView())
         } else {
             print("SceneDelegate: Not authenticated, showing LoginView")
-            rootView = LoginView()
+            rootView = AnyView(LoginView())
         }
         
-        window.rootViewController = UIHostingController(rootView: AnyView(rootView))
-        self.window = window
-        window.makeKeyAndVisible()
+        let hostingController = UIHostingController(rootView: rootView)
+        
+        // Анимированная смена корневого контроллера
+        UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve) {
+            window.rootViewController = hostingController
+        }
     }
 }
 
@@ -442,6 +467,7 @@ struct ProcessingResult: Codable {
 FILE: SBRA PWA/Models/Report.swift
 ================================================================================
 
+// SBRA PWA/Models/Report.swift
 import Foundation
 
 struct ReportInfo: Codable, Identifiable {
@@ -471,7 +497,6 @@ struct ReportInfo: Codable, Identifiable {
 }
 
 // MARK: - Generic API Response Types
-
 struct UploadResponse: Codable {
     let message: String
     let filename: String?
@@ -487,7 +512,6 @@ struct MessageResponse: Codable {
 }
 
 // MARK: - White List
-
 struct WhiteListCard: Codable, Identifiable {
     let cardNum: String
     let typeCon: String
@@ -509,8 +533,7 @@ struct WhiteListResponse: Codable {
 }
 
 // MARK: - Balance Report
-
-struct BalanceReportItem: Codable, Identifiable {
+struct BalanceReportItem: Codable, Identifiable, Equatable {
     let type: String
     let groupName: String
     let rest: Double
@@ -534,8 +557,14 @@ struct BalanceReportItem: Codable, Identifiable {
                   let doubleValue = Double(stringValue) {
             rest = doubleValue
         } else {
-            rest = 0.0 // Default value or throw error if preferred
+            rest = 0.0
         }
+    }
+    
+    static func == (lhs: BalanceReportItem, rhs: BalanceReportItem) -> Bool {
+        return lhs.type == rhs.type &&
+               lhs.groupName == rhs.groupName &&
+               lhs.rest == rhs.rest
     }
     
     var formattedRest: String {
@@ -575,7 +604,6 @@ struct BalanceReportDetailedResponse: Codable {
 }
 
 // MARK: - History Item
-
 struct HistoryItem: Codable, Identifiable {
     let operDate: String
     let groupType: String
@@ -1517,6 +1545,7 @@ class APIService: NSObject, URLSessionDelegate {
 FILE: SBRA PWA/Services/TokenManager.swift
 ================================================================================
 
+// SBRA PWA/Services/TokenManager.swift
 import Foundation
 import KeychainSwift
 
@@ -1526,15 +1555,26 @@ class TokenManager {
     private let tokenKey = "auth_token"
     private let usernameKey = "username"
     
-    private init() {}
+    private init() {
+        // Настройка Keychain
+        keychain.synchronizable = false
+        keychain.accessGroup = nil
+    }
     
     func saveToken(_ token: String, username: String) {
         keychain.set(token, forKey: tokenKey)
         keychain.set(username, forKey: usernameKey)
+        print("TokenManager: Token saved for user: \(username)")
     }
     
     func getToken() -> String? {
-        return keychain.get(tokenKey)
+        let token = keychain.get(tokenKey)
+        if token != nil {
+            print("TokenManager: Token retrieved")
+        } else {
+            print("TokenManager: No token found")
+        }
+        return token
     }
     
     func getUsername() -> String? {
@@ -1544,11 +1584,22 @@ class TokenManager {
     func clearToken() {
         keychain.delete(tokenKey)
         keychain.delete(usernameKey)
+        print("TokenManager: Token cleared")
+        
+        // Отправляем уведомление о выходе
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .userDidLogout, object: nil)
+        }
     }
     
     var isAuthenticated: Bool {
         return getToken() != nil
     }
+}
+
+// Добавляем notification name
+extension Notification.Name {
+    static let userDidLogout = Notification.Name("userDidLogout")
 }
 
 
@@ -1660,6 +1711,7 @@ struct HapticButtonStyle: ButtonStyle {
             }
     }
 }
+
 
 
 [Кодировка: utf-8]
@@ -1781,46 +1833,101 @@ extension String {
 FILE: SBRA PWA/Utils/ToastView.swift
 ================================================================================
 
+// SBRA PWA/Utils/ToastView.swift (полностью обновленный)
 import SwiftUI
 
 struct ToastView: View {
-    let message: String
+    let toast: Toast
+    let onCancelTapped: () -> Void
     
     var body: some View {
-        Text(message)
-            .font(.subheadline)
-            .foregroundColor(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color.black.opacity(0.8))
-            .cornerRadius(25)
-            .shadow(radius: 10)
-            .padding(.bottom, 50)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+        HStack(spacing: 12) {
+            Image(systemName: toast.style.icon)
+                .foregroundColor(toast.style.color)
+                .font(.title3)
+            
+            Text(toast.message)
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(2)
+            
+            Spacer(minLength: 10)
+            
+            Button(action: onCancelTapped) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(Theme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            ZStack {
+                // Эффект стекла
+                RoundedRectangle(cornerRadius: 25, style: .continuous)
+                    .fill(.regularMaterial)
+                    .opacity(0.95)
+                
+                // Цветная полоска слева
+                HStack {
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
+                        .fill(toast.style.color)
+                        .frame(width: 4)
+                        .padding(.vertical, 8)
+                    Spacer()
+                }
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 25)
+                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+        )
+        .shadow(color: toast.style.color.opacity(0.3), radius: 10, x: 0, y: 5)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 20)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 
 struct ToastModifier: ViewModifier {
-    @Binding var message: String?
+    @Binding var toast: Toast?
     
     func body(content: Content) -> some View {
         ZStack {
             content
             
-            if let msg = message {
+            if let toast = toast {
                 VStack {
                     Spacer()
-                    ToastView(message: msg)
+                    ToastView(
+                        toast: toast,
+                        onCancelTapped: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                self.toast = nil
+                            }
+                        }
+                    )
                 }
                 .zIndex(1)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .onAppear {
+                    // Автоматически скрываем через duration
+                    DispatchQueue.main.asyncAfter(deadline: .now() + toast.duration) {
+                        withAnimation {
+                            if self.toast?.message == toast.message {
+                                self.toast = nil
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 extension View {
-    func toast(message: Binding<String?>) -> some View {
-        self.modifier(ToastModifier(message: message))
+    func toast(toast: Binding<Toast?>) -> some View {
+        self.modifier(ToastModifier(toast: toast))
     }
 }
 
@@ -1831,14 +1938,16 @@ extension View {
 FILE: SBRA PWA/ViewModels/AccountGroupsViewModel.swift
 ================================================================================
 
+// SBRA PWA/ViewModels/AccountGroupsViewModel.swift
 import Foundation
 import Combine
+import SwiftUI
 
-class AccountGroupsViewModel: ObservableObject {
+class AccountGroupsViewModel: ObservableObject, ToastCapable {
     @Published var groups: [AccountGroup] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var toastMessage: String?
+    @Published var toast: Toast?
     @Published var formError: String?
     @Published var selectedGroup: AccountGroup?
     @Published var isEditing = false
@@ -1877,9 +1986,10 @@ class AccountGroupsViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно создана")
+                self?.showSuccess("Группа успешно создана")
                 self?.successPublisher.send()
                 self?.loadGroups()
             }
@@ -1895,9 +2005,10 @@ class AccountGroupsViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно обновлена")
+                self?.showSuccess("Группа успешно обновлена")
                 self?.successPublisher.send()
                 self?.loadGroups()
             }
@@ -1913,9 +2024,10 @@ class AccountGroupsViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно удалена")
+                self?.showSuccess("Группа успешно удалена")
                 self?.successPublisher.send()
                 self?.loadGroups()
             }
@@ -1931,15 +2043,6 @@ class AccountGroupsViewModel: ObservableObject {
             $0.grpName.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
-        }
-    }
 }
 
 
@@ -1949,6 +2052,7 @@ class AccountGroupsViewModel: ObservableObject {
 FILE: SBRA PWA/ViewModels/AuthViewModel.swift
 ================================================================================
 
+// SBRA PWA/ViewModels/AuthViewModel.swift
 import Foundation
 import Combine
 
@@ -1963,15 +2067,32 @@ class AuthViewModel: ObservableObject {
     private let apiService = APIService.shared
     
     init() {
+        // Проверяем, есть ли сохраненный токен
         isAuthenticated = TokenManager.shared.isAuthenticated
         if isAuthenticated {
             username = TokenManager.shared.getUsername() ?? ""
+            print("AuthViewModel: User is authenticated: \(username)")
+        } else {
+            print("AuthViewModel: No authenticated user")
         }
         
         // Подписка на уведомление о разлогине
-        NotificationCenter.default.addObserver(forName: APIService.unauthorizedNotification, object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(
+            forName: APIService.unauthorizedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             print("AuthViewModel: Received unauthorized notification, logging out...")
             self?.logout()
+        }
+        // Подписка на уведомление о выходе
+        NotificationCenter.default.addObserver(
+            forName: .userDidLogout,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            print("AuthViewModel: Received userDidLogout notification")
+            self?.isAuthenticated = false
         }
     }
     
@@ -1993,19 +2114,32 @@ class AuthViewModel: ObservableObject {
                     break
                 case .failure(let error):
                     self?.errorMessage = error.localizedDescription
+                    print("AuthViewModel: Login failed - \(error.localizedDescription)")
                 }
             } receiveValue: { [weak self] token in
                 TokenManager.shared.saveToken(token.accessToken, username: self?.username ?? "")
-                self?.isAuthenticated = true
+                // Важно: устанавливаем на главном потоке
+                DispatchQueue.main.async {
+                    self?.isAuthenticated = true
+                    print("AuthViewModel: Successfully logged in as \(self?.username ?? "")")
+                }
             }
             .store(in: &cancellables)
     }
     
     func logout() {
+        print("AuthViewModel: Logging out...")
         TokenManager.shared.clearToken()
-        isAuthenticated = false
+        
+        // Очищаем поля
         username = ""
         password = ""
+        
+        // Важно: устанавливаем на главном потоке
+        DispatchQueue.main.async { [weak self] in
+            self?.isAuthenticated = false
+            print("AuthViewModel: Logged out successfully, isAuthenticated set to false")
+        }
     }
 }
 
@@ -2131,14 +2265,90 @@ class BalanceReportViewModel: ObservableObject {
 [Кодировка: utf-8]
 
 ================================================================================
+FILE: SBRA PWA/ViewModels/BaseViewModel.swift
+================================================================================
+
+// SBRA PWA/ViewModels/BaseViewModel.swift
+import Foundation
+import Combine
+import SwiftUI
+
+// MARK: - Toast Types
+enum ToastStyle {
+    case success
+    case error
+    case warning
+    case info
+    
+    var icon: String {
+        switch self {
+        case .success: return "checkmark.circle.fill"
+        case .error: return "exclamationmark.triangle.fill"
+        case .warning: return "exclamationmark.circle.fill"
+        case .info: return "info.circle.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .success: return Color(hex: "10B981") // Зеленый
+        case .error: return Color(hex: "EF4444")   // Красный
+        case .warning: return Color(hex: "F59E0B") // Оранжевый
+        case .info: return Color(hex: "3B82F6")    // Синий
+        }
+    }
+}
+
+// MARK: - Toast Model
+struct Toast: Equatable {
+    let message: String
+    let style: ToastStyle
+    var duration: Double = 2.0
+}
+
+// MARK: - Toast Protocol
+protocol ToastCapable: AnyObject {
+    var toast: Toast? { get set }
+}
+
+extension ToastCapable {
+    func showToast(_ message: String, style: ToastStyle = .info) {
+        toast = Toast(message: message, style: style)
+        
+        // Автоматически скрываем через 2 секунды
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            if self?.toast?.message == message {
+                self?.toast = nil
+            }
+        }
+    }
+    
+    func showSuccess(_ message: String) {
+        showToast(message, style: .success)
+    }
+    
+    func showError(_ message: String) {
+        showToast(message, style: .error)
+    }
+    
+    func showWarning(_ message: String) {
+        showToast(message, style: .warning)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
 FILE: SBRA PWA/ViewModels/CardActivationViewModel.swift
 ================================================================================
 
+// SBRA PWA/ViewModels/CardActivationViewModel.swift
 import Foundation
 import Combine
 import UniformTypeIdentifiers
 
-class CardActivationViewModel: ObservableObject {
+class CardActivationViewModel: ObservableObject, ToastCapable {
     @Published var activationResult: BatchActivationResult?
     @Published var history: [ActivationHistory] = []
     @Published var isLoading = false
@@ -2146,7 +2356,7 @@ class CardActivationViewModel: ObservableObject {
     @Published var isLoadingHistory = false
     @Published var errorMessage: String?
     @Published var selectedFile: URL?
-    @Published var toastMessage: String?
+    @Published var toast: Toast?  // Изменено с toastMessage
     
     // Фильтры
     @Published var filterStartDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
@@ -2171,6 +2381,7 @@ class CardActivationViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] result in
                 let batchResult = BatchActivationResult(
@@ -2181,12 +2392,15 @@ class CardActivationViewModel: ObservableObject {
                 )
                 self?.activationResult = batchResult
                 let displayMessage = result.success ? "Карта успешно активирована" : (result.message.isEmpty ? "Ошибка активации" : result.message)
-                self?.triggerToast(displayMessage)
+                
                 if result.success {
+                    self?.showSuccess(displayMessage)
                     HapticManager.shared.success()
                 } else {
+                    self?.showError(displayMessage)
                     HapticManager.shared.warning()
                 }
+                
                 self?.successPublisher.send()
                 self?.loadHistory()
             }
@@ -2212,11 +2426,12 @@ class CardActivationViewModel: ObservableObject {
                     self?.isUploading = false
                     if case .failure(let error) = completion {
                         self?.errorMessage = error.localizedDescription
+                        self?.showError(error.localizedDescription)
                     }
                 } receiveValue: { [weak self] result in
                     self?.activationResult = result
                     self?.selectedFile = nil
-                    self?.triggerToast("Файл обработан. Успешно: \(result.success)")
+                    self?.showSuccess("Файл обработан. Успешно: \(result.success)")
                     self?.successPublisher.send()
                     self?.loadHistory()
                 }
@@ -2224,6 +2439,7 @@ class CardActivationViewModel: ObservableObject {
         } catch {
             isUploading = false
             errorMessage = error.localizedDescription
+            showError(error.localizedDescription)
         }
     }
     
@@ -2247,6 +2463,7 @@ class CardActivationViewModel: ObservableObject {
                 self?.isLoadingHistory = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] history in
                 self?.history = history
@@ -2261,9 +2478,10 @@ class CardActivationViewModel: ObservableObject {
             .sink { [weak self] completion in
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("История очищена")
+                self?.showSuccess("История очищена")
                 self?.loadHistory()
             }
             .store(in: &cancellables)
@@ -2271,6 +2489,17 @@ class CardActivationViewModel: ObservableObject {
     
     func cleanupHistory(days: Int) {
         // Реализация очистки старше N дней
+        let calendar = Calendar.current
+        let cutoffDate = calendar.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        
+        // Фильтруем историю, оставляя только записи новее cutoffDate
+        history = history.filter { item in
+            let dateFormatter = ISO8601DateFormatter()
+            guard let itemDate = dateFormatter.date(from: item.createdAt) else { return true }
+            return itemDate > cutoffDate
+        }
+        
+        showSuccess("История очищена от записей старше \(days) дней")
     }
     
     func setFilterToday() {
@@ -2289,15 +2518,6 @@ class CardActivationViewModel: ObservableObject {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: size)
-    }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
-        }
     }
 }
 
@@ -2579,13 +2799,12 @@ FILE: SBRA PWA/ViewModels/ProcessingViewModel.swift
 ================================================================================
 
 // SBRA PWA/ViewModels/ProcessingViewModel.swift
-
 import Foundation
 import Combine
 import UIKit
 import UniformTypeIdentifiers
 
-class ProcessingViewModel: ObservableObject {
+class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляем ToastCapable
     @Published var processings: [AvailableProcessing] = []
     @Published var selectedProcessing: AvailableProcessing?
     @Published var isLoading = false
@@ -2595,9 +2814,7 @@ class ProcessingViewModel: ObservableObject {
     @Published var uploadResult: UploadResult?
     @Published var availableGroups: [String] = []
     @Published var cardCount: Int?
-    @Published var toastMessage: String?
-    
-    // Добавляем эту переменную для управления file picker из UIKit
+    @Published var toast: Toast? // Изменено с toastMessage
     @Published var showFilePicker = false
     
     let successPublisher = PassthroughSubject<Void, Never>()
@@ -2625,6 +2842,7 @@ class ProcessingViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] processings in
                 self?.processings = processings
@@ -2641,7 +2859,6 @@ class ProcessingViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    // ИСПРАВЛЕНО: Теперь показывает file picker
     func selectFile() {
         showFilePicker = true
     }
@@ -2665,6 +2882,7 @@ class ProcessingViewModel: ObservableObject {
                     self?.isUploading = false
                     if case .failure(let error) = completion {
                         self?.errorMessage = error.localizedDescription
+                        self?.showError(error.localizedDescription)
                         self?.uploadResult = UploadResult(
                             success: false,
                             message: error.localizedDescription,
@@ -2678,12 +2896,14 @@ class ProcessingViewModel: ObservableObject {
                         cardCount: result.count
                     )
                     self?.selectedFile = nil
+                    self?.showSuccess("Файл успешно загружен")
                     self?.checkCardCount()
                 }
                 .store(in: &cancellables)
         } catch {
             isUploading = false
             errorMessage = error.localizedDescription
+            showError(error.localizedDescription)
         }
     }
     
@@ -2710,10 +2930,10 @@ class ProcessingViewModel: ObservableObject {
             .sink { [weak self] completion in
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                // Задача запущена
-                self?.triggerToast("Задача успешно запущена")
+                self?.showSuccess("Задача успешно запущена")
                 self?.successPublisher.send()
             }
             .store(in: &cancellables)
@@ -2723,15 +2943,6 @@ class ProcessingViewModel: ObservableObject {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: size)
-    }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
-        }
     }
 }
 
@@ -2885,17 +3096,18 @@ class TasksViewModel: ObservableObject {
 FILE: SBRA PWA/ViewModels/WhiteListViewModel.swift
 ================================================================================
 
+// SBRA PWA/ViewModels/WhiteListViewModel.swift
 import Foundation
 import Combine
 import UIKit
 
-class WhiteListViewModel: ObservableObject {
+class WhiteListViewModel: ObservableObject, ToastCapable { // Добавляем ToastCapable
     @Published var cards: [WhiteListCard] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var showSuccessMessage = false
     @Published var successMessage: String?
-    @Published var toastMessage: String?
+    @Published var toast: Toast? // Изменено с toastMessage
     
     private var cancellables = Set<AnyCancellable>()
     private let apiService = APIService.shared
@@ -2915,6 +3127,7 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] cards in
                 self?.cards = cards
@@ -2931,9 +3144,10 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] response in
-                self?.triggerToast("Карта успешно добавлена")
+                self?.showSuccess("Карта успешно добавлена")
                 self?.successPublisher.send()
                 self?.loadCards()
             }
@@ -2943,6 +3157,7 @@ class WhiteListViewModel: ObservableObject {
     func uploadWhiteListFile(fileURL: URL) {
         guard let data = try? Data(contentsOf: fileURL) else {
             self.errorMessage = "Не удалось прочитать файл"
+            self.showError("Не удалось прочитать файл")
             return
         }
         
@@ -2954,9 +3169,10 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] response in
-                self?.triggerToast("Файл успешно загружен. Обработано \(response.count ?? 0) карт")
+                self?.showSuccess("Файл успешно загружен. Обработано \(response.count ?? 0) карт")
                 self?.successPublisher.send()
                 self?.loadCards()
             }
@@ -2972,9 +3188,10 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Карта успешно удалена")
+                self?.showSuccess("Карта успешно удалена")
                 self?.loadCards()
             }
             .store(in: &cancellables)
@@ -2989,21 +3206,13 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно очищена")
+                self?.showSuccess("Группа успешно очищена")
                 self?.loadCards()
             }
             .store(in: &cancellables)
-    }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
-        }
     }
 }
 
@@ -3014,104 +3223,284 @@ class WhiteListViewModel: ObservableObject {
 FILE: SBRA PWA/Views/Auth/LoginView.swift
 ================================================================================
 
+// SBRA PWA/Views/Auth/LoginView.swift
 import SwiftUI
 
 struct LoginView: View {
     @StateObject private var viewModel = AuthViewModel()
     @State private var showingAlert = false
+    @State private var animate = false
+    @FocusState private var focusedField: Field?
+    
+    enum Field {
+        case username
+        case password
+    }
     
     var body: some View {
         ZStack {
-            // Градиентный фон
+            // Современный градиентный фон с анимацией
+            MeshGradientBackground()
+            
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 30) {
+                    // Анимированный логотип
+                    VStack(spacing: 20) {
+                        Image(systemName: "externaldrive.fill")
+                            .font(.system(size: 90))
+                            .foregroundColor(.white)
+                            .shadow(color: .white.opacity(0.3), radius: 20, x: 0, y: 10)
+                            .scaleEffect(animate ? 1 : 0.8)
+                            .opacity(animate ? 1 : 0.5)
+                            .animation(.spring(response: 0.6, dampingFraction: 0.6).repeatForever(autoreverses: true), value: animate)
+                        
+                        VStack(spacing: 8) {
+                            Text("Oracle Processor")
+                                .font(.system(size: 36, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                            
+                            Text("Мобильная версия")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.8))
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(20)
+                        }
+                    }
+                    .padding(.top, 60)
+                    
+                    Spacer(minLength: 20)
+                    
+                    // Карточка входа с эффектом стекла
+                    VStack(spacing: 25) {
+                        VStack(alignment: .leading, spacing: 20) {
+                            // Поле логина
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Логин")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white.opacity(0.7))
+                                
+                                HStack {
+                                    Image(systemName: "person.fill")
+                                        .foregroundColor(.white.opacity(0.5))
+                                        .frame(width: 20)
+                                    
+                                    TextField("", text: $viewModel.username)
+                                        .textFieldStyle(PlainTextFieldStyle())
+                                        .foregroundColor(.white)
+                                        .autocapitalization(.none)
+                                        .disableAutocorrection(true)
+                                        .focused($focusedField, equals: .username)
+                                        .submitLabel(.next)
+                                        .onSubmit {
+                                            focusedField = .password
+                                        }
+                                        .placeholder(when: viewModel.username.isEmpty) {
+                                            Text("Введите логин")
+                                                .foregroundColor(.white.opacity(0.5))
+                                        }
+                                }
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(.ultraThinMaterial)
+                                        .opacity(0.8)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(focusedField == .username ? Color.white : Color.white.opacity(0.2), lineWidth: focusedField == .username ? 2 : 1)
+                                )
+                            }
+                            
+                            // Поле пароля
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Пароль")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white.opacity(0.7))
+                                
+                                HStack {
+                                    Image(systemName: "lock.fill")
+                                        .foregroundColor(.white.opacity(0.5))
+                                        .frame(width: 20)
+                                    
+                                    SecureField("", text: $viewModel.password)
+                                        .textFieldStyle(PlainTextFieldStyle())
+                                        .foregroundColor(.white)
+                                        .focused($focusedField, equals: .password)
+                                        .submitLabel(.done)
+                                        .onSubmit {
+                                            login()
+                                        }
+                                        .placeholder(when: viewModel.password.isEmpty) {
+                                            Text("Введите пароль")
+                                                .foregroundColor(.white.opacity(0.5))
+                                        }
+                                }
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(.ultraThinMaterial)
+                                        .opacity(0.8)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(focusedField == .password ? Color.white : Color.white.opacity(0.2), lineWidth: focusedField == .password ? 2 : 1)
+                                )
+                            }
+                        }
+                        
+                        // Кнопка входа
+                        Button(action: login) {
+                            HStack {
+                                if viewModel.isLoading {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(1.2)
+                                } else {
+                                    Text("Войти")
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color.blue, Color.blue.opacity(0.8)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .foregroundColor(.white)
+                            .cornerRadius(16)
+                            .shadow(color: Color.blue.opacity(0.3), radius: 20, x: 0, y: 10)
+                        }
+                        .disabled(viewModel.isLoading)
+                        .scaleEffect(viewModel.isLoading ? 0.98 : 1)
+                        .animation(.spring(), value: viewModel.isLoading)
+                        
+                        if let error = viewModel.errorMessage {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color.red.opacity(0.2))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(Color.red.opacity(0.5), lineWidth: 1)
+                                        )
+                                )
+                                .transition(.scale.combined(with: .opacity))
+                        }
+                    }
+                    .padding(30)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(.ultraThinMaterial)
+                                .opacity(0.9)
+                            
+                            RoundedRectangle(cornerRadius: 30)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        }
+                    )
+                    .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 20)
+                    .padding(.horizontal, 20)
+                    
+                    Spacer()
+                    
+                    // Подвал
+                    VStack(spacing: 8) {
+                        Text("Для продолжения работы требуется авторизация")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.6))
+                        
+                        Text("Версия 1.0.0")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                    .padding(.bottom, 30)
+                }
+                .frame(minHeight: UIScreen.main.bounds.height)
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            animate = true
+        }
+    }
+    
+    private func login() {
+        viewModel.login()
+    }
+}
+
+// MARK: - Mesh Gradient Background
+struct MeshGradientBackground: View {
+    @State private var animateGradient = false
+    
+    var body: some View {
+        ZStack {
+            // Базовый градиент
             LinearGradient(
-                gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.7)]),
-                startPoint: .top,
-                endPoint: .bottom
+                colors: [
+                    Color(hex: "0052FF"),
+                    Color(hex: "7C3AED"),
+                    Color(hex: "FF6B6B")
+                ],
+                startPoint: animateGradient ? .topLeading : .bottomLeading,
+                endPoint: animateGradient ? .bottomTrailing : .topTrailing
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 30) {
-                // Логотип и заголовок
-                VStack(spacing: 15) {
-                    Image(systemName: "externaldrive.fill")
-                        .font(.system(size: 80))
-                        .foregroundColor(.white)
-                    
-                    Text("Oracle Processor")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                    
-                    Text("Мобильная версия")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
-                }
-                .padding(.top, 50)
-                
-                // Форма входа
-                VStack(spacing: 20) {
-                    TextField("Логин", text: $viewModel.username)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .padding(.horizontal)
-                    
-                    SecureField("Пароль", text: $viewModel.password)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .padding(.horizontal)
-                    
-                    Button(action: {
-                        viewModel.login()
-                    }) {
-                        HStack {
-                            if viewModel.isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .padding(.trailing, 5)
-                            }
-                            Text(viewModel.isLoading ? "Вход..." : "Войти")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.white)
-                        .foregroundColor(.blue)
-                        .cornerRadius(10)
-                    }
-                    .disabled(viewModel.isLoading)
-                    .padding(.horizontal)
-                    
-                    if let error = viewModel.errorMessage {
-                        Text(error)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                            .padding(.top, 5)
-                    }
-                }
-                .padding(.vertical, 30)
-                .background(Color.white.opacity(0.2))
-                .cornerRadius(20)
-                .padding(.horizontal)
-                
-                Spacer()
-                
-                // Подвал
-                Text("Для продолжения работы требуется авторизация")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.bottom, 20)
-            }
+            // Анимированные круги
+            Circle()
+                .fill(Color.blue.opacity(0.3))
+                .frame(width: 300, height: 300)
+                .blur(radius: 60)
+                .offset(x: animateGradient ? -100 : 100, y: animateGradient ? -200 : 200)
+                .animation(.easeInOut(duration: 10).repeatForever(autoreverses: true), value: animateGradient)
+            
+            Circle()
+                .fill(Color.purple.opacity(0.3))
+                .frame(width: 400, height: 400)
+                .blur(radius: 80)
+                .offset(x: animateGradient ? 150 : -150, y: animateGradient ? 300 : -300)
+                .animation(.easeInOut(duration: 12).repeatForever(autoreverses: true), value: animateGradient)
+            
+            // Шумовая текстура
+            Color.white.opacity(0.02)
+                .blendMode(.overlay)
         }
-        .onReceive(viewModel.$isAuthenticated) { isAuthenticated in
-            if isAuthenticated {
-                // Переход на главный экран
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = windowScene.windows.first {
-                    window.rootViewController = UIHostingController(rootView: MainTabView())
-                    UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve, animations: nil, completion: nil)
-                    window.makeKeyAndVisible()
-                }
-            }
+        .onAppear {
+            animateGradient = true
+        }
+    }
+}
+
+// MARK: - Placeholder Extension
+extension View {
+    func placeholder<Content: View>(
+        when shouldShow: Bool,
+        alignment: Alignment = .leading,
+        @ViewBuilder placeholder: () -> Content
+    ) -> some View {
+        ZStack(alignment: alignment) {
+            placeholder().opacity(shouldShow ? 1 : 0)
+            self
         }
     }
 }
@@ -3129,6 +3518,7 @@ struct LoginView_Previews: PreviewProvider {
 FILE: SBRA PWA/Views/Main/AccountGroupsView.swift
 ================================================================================
 
+// SBRA PWA/Views/Main/AccountGroupsView.swift
 import SwiftUI
 
 struct AccountGroupsView: View {
@@ -3138,53 +3528,68 @@ struct AccountGroupsView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                // Поиск
-                SearchBar(text: $searchText, placeholder: "Поиск по счету или группе")
-                    .padding(.horizontal)
+            ZStack {
+                MeshBackground()
                 
-                if viewModel.isLoading {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                } else if viewModel.groups.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "folder")
-                            .font(.largeTitle)
-                            .foregroundColor(.gray)
-                        Text("Нет записей")
-                            .foregroundColor(.gray)
-                        Button("Добавить первую запись") {
-                            showingAddModal = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        ForEach(viewModel.filteredGroups(searchText)) { group in
-                            Button(action: {
-                                viewModel.selectedGroup = group
-                                viewModel.isEditing = true
+                VStack(spacing: 0) {
+                    // Поиск
+                    SearchBar(text: $searchText, placeholder: "Поиск по счету или группе")
+                        .padding()
+                    
+                    if viewModel.isLoading {
+                        Spacer()
+                        ProgressView()
+                            .tint(Theme.primary)
+                            .scaleEffect(1.2)
+                        Spacer()
+                    } else if viewModel.groups.isEmpty {
+                        EmptyStateView(
+                            icon: "folder",
+                            title: "Нет записей",
+                            message: "Добавьте первую группу счетов",
+                            buttonTitle: "Добавить",
+                            action: {
+                                viewModel.selectedGroup = nil
+                                viewModel.isEditing = false
                                 showingAddModal = true
-                            }) {
-                                AccountGroupRow(group: group)
                             }
-                            .buttonStyle(.plain)
+                        )
+                    } else {
+                        List {
+                            ForEach(viewModel.filteredGroups(searchText)) { group in
+                                Button(action: {
+                                    viewModel.selectedGroup = group
+                                    viewModel.isEditing = true
+                                    showingAddModal = true
+                                }) {
+                                    AccountGroupRow(group: group)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .listStyle(.plain)
+                        .background(Color.clear)
+                        .refreshable {
+                            await withAnimation {
+                                viewModel.loadGroups()
+                            }
                         }
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Группы счетов")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
                         Button(action: {
-                            viewModel.loadGroups()
+                            withAnimation {
+                                viewModel.loadGroups()
+                            }
                         }) {
                             Image(systemName: "arrow.clockwise")
+                                .font(.headline)
+                                .foregroundColor(Theme.primary)
                         }
                         
                         Button(action: {
@@ -3192,7 +3597,9 @@ struct AccountGroupsView: View {
                             viewModel.isEditing = false
                             showingAddModal = true
                         }) {
-                            Image(systemName: "plus")
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(Theme.primary)
                         }
                     }
                 }
@@ -3201,7 +3608,7 @@ struct AccountGroupsView: View {
                 AccountGroupModal(viewModel: viewModel, isPresented: $showingAddModal)
             }
             .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil && !showingAddModal },
+                get: { viewModel.errorMessage != nil },
                 set: { if !$0 { viewModel.errorMessage = nil } }
             )) {
                 Button("OK") {
@@ -3210,7 +3617,7 @@ struct AccountGroupsView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
-            .toast(message: $viewModel.toastMessage)
+            .toast(toast: $viewModel.toast)
         }
     }
 }
@@ -3222,18 +3629,35 @@ struct SearchBar: View {
     var body: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
+                .foregroundColor(Theme.textSecondary)
+                .font(.subheadline)
             
             TextField(placeholder, text: $text)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .textFieldStyle(PlainTextFieldStyle())
+                .font(.subheadline)
             
             if !text.isEmpty {
-                Button(action: { text = "" }) {
+                Button(action: {
+                    withAnimation {
+                        text = ""
+                    }
+                }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.gray)
+                        .foregroundColor(Theme.textTertiary)
+                        .font(.subheadline)
                 }
             }
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.cardBackground.opacity(0.8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal)
     }
 }
 
@@ -3242,28 +3666,44 @@ struct AccountGroupRow: View {
     
     var body: some View {
         HStack {
+            // Иконка
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.primary.opacity(0.1))
+                .frame(width: 50, height: 50)
+                .overlay(
+                    Image(systemName: "folder")
+                        .foregroundColor(Theme.primary)
+                        .font(.title3)
+                )
+            
             VStack(alignment: .leading, spacing: 4) {
                 Text(group.accNum)
                     .font(.headline)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.primary)
+                    .foregroundColor(Theme.textPrimary)
                 
                 Text(group.grpName)
                     .font(.caption)
-                    .padding(4)
-                    .background(Color.blue.opacity(0.2))
-                    .foregroundColor(.blue)
-                    .cornerRadius(4)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.primary.opacity(0.1))
+                    .foregroundColor(Theme.primary)
+                    .cornerRadius(8)
             }
             
             Spacer()
             
             Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundColor(.gray)
+                .font(.caption.weight(.bold))
+                .foregroundColor(Theme.textTertiary)
         }
-        .contentShape(Rectangle())
-        .padding(.vertical, 8)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.cardBackground)
+                .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+        )
+        .padding(.horizontal)
+        .padding(.vertical, 4)
     }
 }
 
@@ -3276,85 +3716,106 @@ struct AccountGroupModal: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                Form {
-                    Section(header: Text("Данные")) {
-                        TextField("Номер счета", text: $accNum)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                        
-                        TextField("Группа (STREAM_%)", text: $grpName)
-                            .autocapitalization(.allCharacters)
-                            .disableAutocorrection(true)
-                            .onChange(of: grpName) { newValue in
-                                grpName = newValue.uppercased()
+            ZStack {
+                MeshBackground()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Поля ввода
+                        VStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Номер счета")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
+                                
+                                TextField("Введите номер счета", text: $accNum)
+                                    .textFieldStyle(ModernTextFieldStyle())
+                                    .autocapitalization(.none)
+                                    .disableAutocorrection(true)
                             }
-                    }
-                    
-                    if let error = viewModel.formError {
-                        Section {
-                            Text(error)
-                                .foregroundColor(.red)
-                                .font(.caption)
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Группа (STREAM_%)")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
+                                
+                                TextField("STREAM_...", text: $grpName)
+                                    .textFieldStyle(ModernTextFieldStyle())
+                                    .autocapitalization(.allCharacters)
+                                    .disableAutocorrection(true)
+                                    .onChange(of: grpName) { newValue in
+                                        grpName = newValue.uppercased()
+                                    }
+                            }
                         }
-                    }
-                    
-                    Section {
-                        Text("Группа должна быть в формате STREAM_% и содержать только заглавные буквы, цифры и _")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    if viewModel.isEditing {
-                        Section {
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(Theme.cardBackground.opacity(0.8))
+                        )
+                        
+                        // Подсказка
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(Theme.info)
+                            Text("Группа должна быть в формате STREAM_% и содержать только заглавные буквы, цифры и _")
+                                .font(.caption)
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                        .padding()
+                        .background(Theme.info.opacity(0.1))
+                        .cornerRadius(12)
+                        
+                        if viewModel.isEditing {
                             Button(role: .destructive) {
                                 showingDeleteConfirmation = true
                             } label: {
                                 HStack {
-                                    Spacer()
                                     Image(systemName: "trash")
                                     Text("Удалить счет")
-                                        .fontWeight(.semibold)
-                                    Spacer()
                                 }
-                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(Color.red.opacity(0.1))
+                                )
+                                .foregroundColor(.red)
                             }
                         }
+                        
+                        Button(action: {
+                            if viewModel.isEditing, let group = viewModel.selectedGroup {
+                                viewModel.updateGroup(oldAccNum: group.accNum, newAccNum: accNum, grpName: grpName)
+                            } else {
+                                viewModel.createGroup(accNum: accNum, grpName: grpName)
+                            }
+                        }) {
+                            if viewModel.isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                Text(viewModel.isEditing ? "Сохранить изменения" : "Создать группу")
+                                    .frame(maxWidth: .infinity)
+                                    .fontWeight(.bold)
+                            }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .disabled(accNum.isEmpty || grpName.isEmpty || !validateGroupName(grpName) || viewModel.isLoading)
                     }
+                    .padding()
                 }
-                
-                Button(action: {
-                    if viewModel.isEditing, let group = viewModel.selectedGroup {
-                        viewModel.updateGroup(oldAccNum: group.accNum, newAccNum: accNum, grpName: grpName)
-                    } else {
-                        viewModel.createGroup(accNum: accNum, grpName: grpName)
-                    }
-                }) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        Text(viewModel.isEditing ? "Сохранить изменения" : "Создать группу")
-                            .frame(maxWidth: .infinity)
-                            .fontWeight(.bold)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding()
-                .disabled(accNum.isEmpty || grpName.isEmpty || !validateGroupName(grpName) || viewModel.isLoading)
             }
             .navigationTitle(viewModel.isEditing ? "Редактирование" : "Добавление")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button(action: {
                         isPresented = false
                     }) {
-                        HStack {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .bold)) // Жирная и стрелка
-                        }
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
             }
@@ -3366,16 +3827,6 @@ struct AccountGroupModal: View {
                     accNum = group.accNum
                     grpName = group.grpName
                 }
-            }
-            .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.errorMessage = nil } }
-            )) {
-                Button("OK") {
-                    viewModel.errorMessage = nil
-                }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
             }
             .alert("Удаление счета", isPresented: $showingDeleteConfirmation) {
                 Button("Отмена", role: .cancel) {}
@@ -3404,64 +3855,105 @@ struct AccountGroupModal: View {
 FILE: SBRA PWA/Views/Main/BalanceReportView.swift
 ================================================================================
 
+// SBRA PWA/Views/Main/BalanceReportView.swift
 import SwiftUI
+import Charts
 
 struct BalanceReportView: View {
     @StateObject private var viewModel = BalanceReportViewModel()
+    @State private var selectedChartType = 0
+    @State private var showChart = true
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Карточки с итогами
-                    TotalsCards(viewModel: viewModel)
-                    
-                    // Таблица
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .padding()
-                    } else if viewModel.items.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "chart.pie")
-                                .font(.largeTitle)
-                                .foregroundColor(.gray)
-                            Text("Нет данных")
-                                .foregroundColor(.gray)
-                            Button("Загрузить отчет") {
-                                viewModel.loadReport()
-                            }
-                            .buttonStyle(.bordered)
+            ZStack {
+                MeshBackground()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Переключатель вида
+                        Picker("Вид", selection: $selectedChartType) {
+                            Text("График").tag(0)
+                            Text("Таблица").tag(1)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                    } else {
-                        BalanceTableView(items: viewModel.items)
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
                         
-                        if let lastUpdated = viewModel.lastUpdated {
-                            Text("Обновлено: \(lastUpdated)")
-                                .font(.caption)
-                                .foregroundColor(.gray)
+                        if viewModel.isLoading {
+                            VStack(spacing: 20) {
+                                ProgressView()
+                                    .tint(Theme.primary)
+                                    .scaleEffect(1.5)
+                                Text("Загрузка отчета...")
+                                    .font(.subheadline)
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 300)
+                        } else if viewModel.items.isEmpty {
+                            EmptyStateView(
+                                icon: "chart.pie",
+                                title: "Нет данных",
+                                message: "Загрузите отчет для просмотра остатков",
+                                buttonTitle: "Загрузить",
+                                action: { viewModel.loadReport() }
+                            )
+                        } else {
+                            // Карточки с итогами
+                            TotalsCards(viewModel: viewModel)
+                                .padding(.horizontal)
+                            
+                            if selectedChartType == 0 {
+                                // График
+                                BalanceChartView(items: viewModel.items)
+                                    .padding()
+                            }
+                            
+                            // Детализация
+                            if selectedChartType == 1 {
+                                BalanceTableView(items: viewModel.items)
+                                    .padding()
+                            }
+                            
+                            if let summary = viewModel.summary {
+                                SummaryView(summary: summary)
+                                    .padding(.horizontal)
+                            }
+                            
+                            if let lastUpdated = viewModel.lastUpdated {
+                                Text("Обновлено: \(lastUpdated)")
+                                    .font(.caption2)
+                                    .foregroundColor(Theme.textTertiary)
+                                    .padding(.bottom)
+                            }
                         }
                     }
+                    .padding(.vertical)
                 }
-                .padding()
             }
             .navigationTitle("Остатки")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
                         Button(action: {
-                            viewModel.exportToExcel()
+                            withAnimation {
+                                viewModel.exportToExcel()
+                            }
                         }) {
                             Image(systemName: "square.and.arrow.up")
+                                .font(.headline)
+                                .foregroundColor(Theme.primary)
                         }
                         .disabled(viewModel.items.isEmpty)
                         
                         Button(action: {
-                            viewModel.loadReport()
+                            withAnimation {
+                                viewModel.loadReport()
+                            }
                         }) {
                             Image(systemName: "arrow.clockwise")
+                                .font(.headline)
+                                .foregroundColor(Theme.primary)
                         }
                     }
                 }
@@ -3484,24 +3976,30 @@ struct TotalsCards: View {
     @ObservedObject var viewModel: BalanceReportViewModel
     
     var body: some View {
-        HStack(spacing: 12) {
-            TotalCard(
-                title: "Общий итог",
-                value: viewModel.totalSum,
-                color: .blue
-            )
-            
-            TotalCard(
-                title: "Карты",
-                value: viewModel.cardsSum,
-                color: .green
-            )
-            
-            TotalCard(
-                title: "Счета",
-                value: viewModel.accountsSum,
-                color: .orange
-            )
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                TotalCard(
+                    title: "Общий итог",
+                    value: viewModel.totalSum,
+                    icon: "sum",
+                    color: Theme.primary
+                )
+                
+                TotalCard(
+                    title: "Карты",
+                    value: viewModel.cardsSum,
+                    icon: "creditcard",
+                    color: Theme.success
+                )
+                
+                TotalCard(
+                    title: "Счета",
+                    value: viewModel.accountsSum,
+                    icon: "banknote",
+                    color: Theme.warning
+                )
+            }
+            .padding(.horizontal, 4)
         }
     }
 }
@@ -3509,6 +4007,7 @@ struct TotalsCards: View {
 struct TotalCard: View {
     let title: String
     let value: Double
+    let icon: String
     let color: Color
     
     var formattedValue: String {
@@ -3521,73 +4020,293 @@ struct TotalCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.8))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color)
+                
+                Spacer()
+                
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
+            }
             
             Text(formattedValue)
-                .font(.headline)
+                .font(.title2)
                 .fontWeight(.bold)
-                .foregroundColor(.white)
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(color)
-        .cornerRadius(10)
+        .frame(width: 160)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Theme.cardBackground)
+                .shadow(color: color.opacity(0.1), radius: 10, x: 0, y: 5)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(color.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+struct BalanceChartView: View {
+    let items: [BalanceReportItem]
+    
+    var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Распределение по группам", systemImage: "chart.pie")
+                    .font(.headline)
+                    .foregroundColor(Theme.textPrimary)
+                
+                if #available(iOS 16.0, *) {
+                    Chart {
+                        ForEach(items.prefix(10)) { item in
+                            BarMark(
+                                x: .value("Сумма", item.rest),
+                                y: .value("Группа", item.groupName)
+                            )
+                            .foregroundStyle(by: .value("Тип", item.type))
+                            .annotation(position: .trailing) {
+                                Text(item.formattedRest)
+                                    .font(.caption2)
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                        }
+                    }
+                    .frame(height: 300)
+                    .chartForegroundStyleScale([
+                        "Карта": Theme.success,
+                        "Счет": Theme.warning
+                    ])
+                } else {
+                    Text("График доступен в iOS 16+")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
+                }
+            }
+            .padding()
+        }
     }
 }
 
 struct BalanceTableView: View {
     let items: [BalanceReportItem]
+    @State private var sortedItems: [BalanceReportItem] = []
+    @State private var sortOrder = SortOrder.descending
+    @State private var selectedType: String? = nil
+    
+    enum SortOrder {
+        case ascending, descending
+        
+        mutating func toggle() {
+            self = self == .ascending ? .descending : .ascending
+        }
+    }
+    
+    var filteredItems: [BalanceReportItem] {
+        if let type = selectedType {
+            return sortedItems.filter { $0.type == type }
+        }
+        return sortedItems
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Детализация")
-                .font(.headline)
-            
-            ForEach(items) { item in
-                BalanceRow(item: item)
-            }
-            
-            HStack {
-                Text("ОБЩИЙ ИТОГ:")
-                    .font(.headline)
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Label("Детализация", systemImage: "list.bullet")
+                        .font(.headline)
+                        .foregroundColor(Theme.textPrimary)
+                    
+                    Spacer()
+                    
+                    Menu {
+                        Button("Все") { selectedType = nil }
+                        Button("Карты") { selectedType = "Карта" }
+                        Button("Счета") { selectedType = "Счет" }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title3)
+                            .foregroundColor(Theme.primary)
+                    }
+                    
+                    Button {
+                        withAnimation {
+                            sortOrder.toggle()
+                            sortItems()
+                        }
+                    } label: {
+                        Image(systemName: sortOrder == .descending ? "arrow.down.circle" : "arrow.up.circle")
+                            .font(.title3)
+                            .foregroundColor(Theme.primary)
+                    }
+                }
                 
-                Spacer()
-                
-                Text(items.reduce(0) { $0 + $1.rest }.formatted())
-                    .font(.headline)
-                    .foregroundColor(.blue)
+                if filteredItems.isEmpty {
+                    Text("Нет данных для отображения")
+                        .font(.caption)
+                        .foregroundColor(Theme.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
+                } else {
+                    LazyVStack(spacing: 12) {
+                        ForEach(filteredItems) { item in
+                            BalanceRow(item: item)
+                            
+                            if item.id != filteredItems.last?.id {
+                                Divider()
+                                    .background(Theme.textTertiary.opacity(0.2))
+                            }
+                        }
+                    }
+                }
             }
-            .padding(.top)
+            .padding()
+        }
+        .onAppear {
+            sortItems()
+        }
+        .onChange(of: items) { newItems in
+            sortItems()
+        }
+    }
+    
+    private func sortItems() {
+        sortedItems = items.sorted {
+            sortOrder == .descending ? $0.rest > $1.rest : $0.rest < $1.rest
         }
     }
 }
 
 struct BalanceRow: View {
     let item: BalanceReportItem
+    @State private var isHovered = false
+    
+    var typeColor: Color {
+        item.type == "Карта" ? Theme.success : Theme.warning
+    }
     
     var body: some View {
-        HStack {
-            Text(item.type)
-                .font(.caption)
-                .padding(4)
-                .background(item.type == "Карта" ? Color.blue.opacity(0.2) : Color.orange.opacity(0.2))
-                .foregroundColor(item.type == "Карта" ? .blue : .orange)
-                .cornerRadius(4)
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(typeColor.opacity(0.1))
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Image(systemName: item.type == "Карта" ? "creditcard" : "banknote")
+                        .foregroundColor(typeColor)
+                        .font(.subheadline)
+                )
             
-            Text(item.groupName)
-                .font(.system(.body, design: .monospaced))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.groupName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.textPrimary)
+                
+                Text(item.type)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(typeColor.opacity(0.1))
+                    .foregroundColor(typeColor)
+                    .cornerRadius(4)
+            }
             
             Spacer()
             
             Text(item.formattedRest)
-                .font(.body)
-                .fontWeight(.semibold)
-                .foregroundColor(item.rest >= 0 ? .primary : .red)
+                .font(.headline)
+                .foregroundColor(item.rest >= 0 ? Theme.textPrimary : Theme.danger)
+                .scaleEffect(isHovered ? 1.05 : 1)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isHovered ? Theme.cardBackgroundSecondary : Color.clear)
+        )
+        .onTapGesture {
+            withAnimation(.spring()) {
+                isHovered.toggle()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                withAnimation {
+                    isHovered = false
+                }
+            }
+        }
+    }
+}
+
+struct SummaryView: View {
+    let summary: BalanceReportSummary
+    
+    var body: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Сводка", systemImage: "chart.bar.doc.horizontal")
+                    .font(.headline)
+                    .foregroundColor(Theme.textPrimary)
+                
+                HStack {
+                    SummaryItem(
+                        title: "Всего записей",
+                        value: "\(summary.recordsCount)",
+                        icon: "number",
+                        color: Theme.info
+                    )
+                    
+                    Spacer()
+                    
+                    SummaryItem(
+                        title: "Средняя сумма",
+                        value: (summary.totalSum / Double(max(1, summary.recordsCount))).formatted(),
+                        icon: "equal",
+                        color: Theme.secondary
+                    )
+                }
+            }
+            .padding()
+        }
+    }
+}
+
+struct SummaryItem: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundColor(color)
+                
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
+            }
+            
+            Text(value)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundColor(Theme.textPrimary)
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(color.opacity(0.05))
+        )
     }
 }
 
@@ -3598,6 +4317,7 @@ struct BalanceRow: View {
 FILE: SBRA PWA/Views/Main/CardActivationView.swift
 ================================================================================
 
+// SBRA PWA/Views/Main/CardActivationView.swift
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -3620,13 +4340,13 @@ struct CardActivationView: View {
                     HStack {
                         Rectangle()
                             .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
+                            .foregroundColor(Theme.textTertiary.opacity(0.3))
                         Text("ИЛИ")
                             .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundColor(Theme.textSecondary)
                         Rectangle()
                             .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
+                            .foregroundColor(Theme.textTertiary.opacity(0.3))
                     }
                     .padding(.horizontal)
                     
@@ -3646,14 +4366,17 @@ struct CardActivationView: View {
                 }
                 .padding()
             }
+            .background(MeshBackground())
             .navigationTitle("Активация карт")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         viewModel.loadHistory()
                     }) {
                         Image(systemName: "arrow.clockwise")
+                            .font(.headline)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
@@ -3665,9 +4388,12 @@ struct CardActivationView: View {
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
-                    viewModel.processExcelFile(url: url)
+                    withAnimation {
+                        viewModel.processExcelFile(url: url)
+                    }
                 case .failure(let error):
                     viewModel.errorMessage = error.localizedDescription
+                    viewModel.showError(error.localizedDescription)
                 }
             }
             .alert("Ошибка", isPresented: Binding(
@@ -3680,7 +4406,7 @@ struct CardActivationView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
-            .toast(message: $viewModel.toastMessage)
+            .toast(toast: $viewModel.toast)  // ИСПРАВЛЕНО: message: → toast:
         }
     }
 }
@@ -3690,45 +4416,45 @@ struct SingleActivationSection: View {
     @ObservedObject var viewModel: CardActivationViewModel
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Активация одной карты")
-                .font(.headline)
-            
-            VStack(spacing: 16) {
-                TextField("Введите номер карты", text: $cardNumber)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .keyboardType(.numberPad)
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Активация одной карты", systemImage: "creditcard")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
                 
-                Button(action: {
-                    let cleanNumber = cardNumber.replacingOccurrences(of: " ", with: "")
-                    viewModel.activateSingleCard(cleanNumber)
-                    cardNumber = ""
-                }) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        Text("Активировать карту")
+                VStack(spacing: 16) {
+                    TextField("Введите номер карты", text: $cardNumber)
+                        .textFieldStyle(ModernTextFieldStyle())
+                        .keyboardType(.numberPad)
+                        .onChange(of: cardNumber) { newValue in
+                            cardNumber = newValue.formattedCardNumber()
+                        }
+                    
+                    Button(action: {
+                        let cleanNumber = cardNumber.replacingOccurrences(of: " ", with: "")
+                        viewModel.activateSingleCard(cleanNumber)
+                        cardNumber = ""
+                    }) {
+                        if viewModel.isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            HStack {
+                                Image(systemName: "bolt.fill")
+                                Text("Активировать карту")
+                            }
                             .frame(maxWidth: .infinity)
-                            .fontWeight(.bold)
+                        }
                     }
+                    .buttonStyle(GlassButtonStyle())
+                    .disabled(cardNumber.isEmpty || viewModel.isLoading)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(cardNumber.isEmpty || viewModel.isLoading)
+                
+                Text("Номер карты будет автоматически очищен от пробелов")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
             }
-            .onChange(of: cardNumber) { newValue in
-                cardNumber = newValue.formattedCardNumber()
-            }
-            
-            Text("Номер карты будет автоматически очищен от пробелов")
-                .font(.caption)
-                .foregroundColor(.gray)
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
 
@@ -3737,67 +4463,85 @@ struct BatchActivationSection: View {
     @Binding var showingFilePicker: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Пакетная активация из Excel")
-                .font(.headline)
-            
-            HStack {
-                Image(systemName: "info.circle")
-                    .foregroundColor(.blue)
-                Text("Загрузите Excel файл с номерами карт в первом столбце")
-                    .font(.caption)
-            }
-            .padding()
-            .background(Color.blue.opacity(0.1))
-            .cornerRadius(8)
-            
-            if let file = viewModel.selectedFile {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Пакетная активация", systemImage: "doc.on.doc")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
+                
                 HStack {
-                    Image(systemName: "doc")
-                    Text(file.lastPathComponent)
-                    Spacer()
-                    Text(viewModel.formatFileSize(file.fileSize))
-                        .foregroundColor(.gray)
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(Theme.info)
+                    Text("Загрузите Excel файл с номерами карт в первом столбце")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            HStack {
-                Button(action: { showingFilePicker = true }) {
-                    Label("Выбрать файл", systemImage: "doc.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                .background(Theme.info.opacity(0.1))
+                .cornerRadius(12)
                 
-                if viewModel.selectedFile != nil {
-                    Button(action: {
-                        viewModel.processSelectedFile()
-                    }) {
-                        if viewModel.isUploading {
-                            ProgressView()
-                        } else {
-                            Label("Загрузить", systemImage: "arrow.up.doc")
-                                .frame(maxWidth: .infinity)
-                        }
+                if let file = viewModel.selectedFile {
+                    HStack {
+                        Image(systemName: "doc.fill")
+                            .foregroundColor(Theme.primary)
+                        Text(file.lastPathComponent)
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textPrimary)
+                        Spacer()
+                        Text(viewModel.formatFileSize(file.fileSize))
+                            .font(.caption)
+                            .foregroundColor(Theme.textTertiary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isUploading)
+                    .padding()
+                    .background(Theme.cardBackgroundSecondary)
+                    .cornerRadius(12)
+                    .transition(.slide.combined(with: .opacity))
+                }
+                
+                HStack {
+                    Button(action: { showingFilePicker = true }) {
+                        Label("Выбрать файл", systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
                     
-                    Button(action: {
-                        viewModel.clearSelectedFile()
-                    }) {
-                        Image(systemName: "xmark")
+                    if viewModel.selectedFile != nil {
+                        Button(action: {
+                            withAnimation {
+                                viewModel.processSelectedFile()
+                            }
+                        }) {
+                            if viewModel.isUploading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Label("Загрузить", systemImage: "arrow.up.doc")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .disabled(viewModel.isUploading)
+                        
+                        Button(action: {
+                            withAnimation {
+                                viewModel.clearSelectedFile()
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.headline)
+                                .foregroundColor(Theme.textSecondary)
+                                .frame(width: 50, height: 50)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Theme.cardBackground)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
-                    .buttonStyle(.bordered)
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
 
@@ -3805,55 +4549,77 @@ struct ActivationResultView: View {
     let result: BatchActivationResult
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Результаты активации")
-                .font(.headline)
-            
-            HStack {
-                ResultCard(title: "Всего", value: result.total, color: .blue)
-                ResultCard(title: "Успешно", value: result.success, color: .green)
-                ResultCard(title: "Ошибки", value: result.failed, color: .red)
-            }
-            
-            if !result.results.isEmpty {
-                DisclosureGroup("Детали") {
-                    ForEach(result.results.indices, id: \.self) { index in
-                        let item = result.results[index]
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(item.cardNumber)
-                                    .font(.caption)
-                                    .font(.system(.caption, design: .monospaced))
-                                
-                                Spacer()
-                                
-                                Image(systemName: item.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(item.success ? .green : .red)
-                            }
-                            
-                            Text(item.message)
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                            
-                            if let details = item.details, let code = details.responseCode {
-                                Text("Код: \(code)")
-                                    .font(.caption2)
-                                    .foregroundColor(.gray)
-                            }
-                            
-                            if index < result.results.count - 1 {
-                                Divider()
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Результаты активации", systemImage: "chart.bar.fill")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
+                
+                HStack(spacing: 12) {
+                    ResultCard(
+                        title: "Всего",
+                        value: result.total,
+                        color: Theme.info
+                    )
+                    
+                    ResultCard(
+                        title: "Успешно",
+                        value: result.success,
+                        color: Theme.success
+                    )
+                    
+                    ResultCard(
+                        title: "Ошибки",
+                        value: result.failed,
+                        color: Theme.danger
+                    )
+                }
+                
+                if !result.results.isEmpty {
+                    DisclosureGroup {
+                        VStack(spacing: 12) {
+                            ForEach(result.results.indices, id: \.self) { index in
+                                let item = result.results[index]
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text(item.cardNumber)
+                                            .font(.system(.subheadline, design: .monospaced))
+                                            .foregroundColor(Theme.textPrimary)
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: item.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                            .foregroundColor(item.success ? Theme.success : Theme.danger)
+                                            .font(.title3)
+                                    }
+                                    
+                                    if !item.message.isEmpty {
+                                        Text(item.message)
+                                            .font(.caption)
+                                            .foregroundColor(Theme.textSecondary)
+                                    }
+                                    
+                                    if let details = item.details, let code = details.responseCode {
+                                        Text("Код ответа: \(code)")
+                                            .font(.caption2)
+                                            .foregroundColor(Theme.textTertiary)
+                                    }
+                                    
+                                    if index < result.results.count - 1 {
+                                        Divider()
+                                    }
+                                }
+                                .padding(.vertical, 4)
                             }
                         }
-                        .padding(.vertical, 4)
+                    } label: {
+                        Text("Показать детали (\(result.results.count))")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
     }
 }
 
@@ -3863,19 +4629,21 @@ struct ResultCard: View {
     let color: Color
     
     var body: some View {
-        VStack {
+        VStack(spacing: 8) {
             Text(title)
                 .font(.caption)
-                .foregroundColor(.gray)
+                .foregroundColor(Theme.textSecondary)
+            
             Text("\(value)")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(.title2.weight(.bold))
                 .foregroundColor(color)
         }
         .frame(maxWidth: .infinity)
-        .padding()
-        .background(color.opacity(0.1))
-        .cornerRadius(8)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(color.opacity(0.1))
+        )
     }
 }
 
@@ -3885,64 +4653,82 @@ struct ActivationHistoryView: View {
     @State private var showingClearHistoryConfirmation = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("История активаций")
-                    .font(.headline)
-                
-                Spacer()
-                
-                Button(action: { showingFilters.toggle() }) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                }
-                
-                Button(action: {
-                    showingClearHistoryConfirmation = true
-                }) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red)
-                }
-            }
-            .alert("Очистка истории", isPresented: $showingClearHistoryConfirmation) {
-                Button("Отмена", role: .cancel) {}
-                Button("Очистить", role: .destructive) {
-                    viewModel.clearHistory()
-                }
-            } message: {
-                Text("Вы уверены, что хотите полностью очистить историю активаций?")
-            }
-            
-            if showingFilters {
-                HistoryFiltersView(viewModel: viewModel)
-            }
-            
-            if viewModel.isLoadingHistory {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
+                    Label("История активаций", systemImage: "clock.arrow.circlepath")
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(Theme.textPrimary)
+                    
                     Spacer()
-                    ProgressView()
-                    Spacer()
+                    
+                    Button(action: {
+                        withAnimation {
+                            showingFilters.toggle()
+                        }
+                    }) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.title3)
+                            .foregroundColor(Theme.primary)
+                    }
+                    
+                    Button(action: {
+                        showingClearHistoryConfirmation = true
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.title3)
+                            .foregroundColor(Theme.danger)
+                    }
                 }
-                .padding()
-            } else if viewModel.history.isEmpty {
-                Text("Нет истории активаций")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                
+                if showingFilters {
+                    HistoryFiltersView(viewModel: viewModel)
+                }
+                
+                if viewModel.isLoadingHistory {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(Theme.primary)
+                        Spacer()
+                    }
+                    .padding()
+                } else if viewModel.history.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "clock")
+                            .font(.largeTitle)
+                            .foregroundColor(Theme.textTertiary)
+                        Text("Нет истории активаций")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
+                    }
                     .frame(maxWidth: .infinity)
                     .padding()
-            } else {
-                Text("Найдено записей: \(viewModel.history.count)")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                
-                ForEach(viewModel.history) { item in
-                    HistoryActivationRow(item: item)
+                } else {
+                    Text("Найдено записей: \(viewModel.history.count)")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
+                    
+                    LazyVStack(spacing: 12) {
+                        ForEach(viewModel.history) { item in
+                            HistoryActivationRow(item: item)
+                            
+                            if item.id != viewModel.history.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .gray.opacity(0.1), radius: 5)
+        .alert("Очистка истории", isPresented: $showingClearHistoryConfirmation) {
+            Button("Отмена", role: .cancel) {}
+            Button("Очистить", role: .destructive) {
+                viewModel.clearHistory()
+            }
+        } message: {
+            Text("Вы уверены, что хотите полностью очистить историю активаций?")
+        }
     }
 }
 
@@ -3950,36 +4736,47 @@ struct HistoryFiltersView: View {
     @ObservedObject var viewModel: CardActivationViewModel
     
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             DatePicker("С", selection: $viewModel.filterStartDate, displayedComponents: .date)
+                .datePickerStyle(.compact)
+                .foregroundColor(Theme.textPrimary)
+            
             DatePicker("По", selection: $viewModel.filterEndDate, displayedComponents: .date)
+                .datePickerStyle(.compact)
+                .foregroundColor(Theme.textPrimary)
             
             HStack {
                 Button("Сегодня") {
-                    viewModel.setFilterToday()
+                    withAnimation {
+                        viewModel.setFilterToday()
+                    }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle())
                 
                 Button("7 дней") {
-                    viewModel.setFilterWeek()
+                    withAnimation {
+                        viewModel.setFilterWeek()
+                    }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle())
                 
-                Button("Очистить старше 30 дней") {
-                    viewModel.cleanupHistory(days: 30)
+                Button("Очистить >30 дней") {
+                    withAnimation {
+                        viewModel.cleanupHistory(days: 30)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .foregroundColor(.orange)
+                .buttonStyle(SecondaryButtonStyle())
+                .foregroundColor(Theme.warning)
             }
             
-            Button("Применить") {
+            Button("Применить фильтры") {
                 viewModel.loadHistory()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(GlassButtonStyle())
         }
         .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(8)
+        .background(Theme.cardBackgroundSecondary.opacity(0.5))
+        .cornerRadius(16)
     }
 }
 
@@ -3987,39 +4784,288 @@ struct HistoryActivationRow: View {
     let item: ActivationHistory
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(item.formattedDate)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundColor(Theme.textSecondary)
                 
                 Spacer()
                 
                 Text(item.success == 1 ? "Успех" : "Ошибка")
                     .font(.caption2)
-                    .padding(4)
-                    .background(item.success == 1 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-                    .foregroundColor(item.success == 1 ? .green : .red)
-                    .cornerRadius(4)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(item.success == 1 ? Theme.success.opacity(0.1) : Theme.danger.opacity(0.1))
+                    .foregroundColor(item.success == 1 ? Theme.success : Theme.danger)
+                    .cornerRadius(8)
             }
             
-            Text(item.cardNumber ?? item.cleanCard ?? "")
-                .font(.subheadline)
+            Text(item.cardNumber ?? item.cleanCard ?? "—")
                 .font(.system(.subheadline, design: .monospaced))
+                .foregroundColor(Theme.textPrimary)
             
-            if let message = item.message {
+            if let message = item.message, !message.isEmpty {
                 Text(message)
                     .font(.caption)
-                    .foregroundColor(.gray)
+                    .foregroundColor(Theme.textTertiary)
             }
             
             if let details = item.details, let code = details.responseCode {
                 Text("Код: \(code)")
                     .font(.caption2)
-                    .foregroundColor(.gray)
+                    .foregroundColor(Theme.info)
             }
         }
         .padding(.vertical, 8)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/DesignSystem.swift
+================================================================================
+
+// SBRA PWA/Views/Main/DesignSystem.swift
+
+import SwiftUI
+
+// MARK: - Цветовая палитра
+enum Theme {
+    // Основные цвета
+    static let primary = Color(hex: "0052FF") // Яркий синий
+    static let secondary = Color(hex: "7C3AED") // Фиолетовый для акцентов
+    static let accent = Color(hex: "FF6B6B") // Коралловый для предупреждений
+
+    // Фоны
+    static let background = Color(hex: "F5F7FA")
+    static let cardBackground = Color.white
+    static let cardBackgroundSecondary = Color(hex: "F8F9FC")
+
+    // Текст
+    static let textPrimary = Color(hex: "1A1F36")
+    static let textSecondary = Color(hex: "6B7280")
+    static let textTertiary = Color(hex: "9CA3AF")
+    
+    // Состояния
+    static let success = Color(hex: "10B981")
+    static let warning = Color(hex: "F59E0B")
+    static let danger = Color(hex: "EF4444")
+    static let info = Color(hex: "3B82F6")
+
+    // Градиенты
+    static let primaryGradient = LinearGradient(
+        colors: [primary, secondary],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    static let cardGradient = LinearGradient(
+        colors: [Color.white.opacity(0.9), Color.white],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+}
+
+// MARK: - Стили кнопок
+struct GlassButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline.weight(.semibold))
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                ZStack {
+                    // Эффект стекла
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Theme.primaryGradient)
+                        .opacity(configuration.isPressed ? 0.8 : 1)
+                    
+                    // Блик сверху
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.2))
+                        .blendMode(.overlay)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+            )
+            .shadow(color: Theme.primary.opacity(0.3), radius: 10, x: 0, y: 5)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline.weight(.medium))
+            .foregroundColor(Theme.primary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white)
+                    .opacity(configuration.isPressed ? 0.7 : 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Theme.primary.opacity(0.3), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Стили карточек
+struct GlassCard<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+            .padding()
+            .background(
+                ZStack {
+                    // Основной фон с размытием
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(.regularMaterial)
+                        .opacity(0.8)
+                    
+                    // Тонкий градиент для глубины
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .blendMode(.overlay)
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: 10)
+    }
+}
+
+// MARK: - Общий фон
+struct MeshBackground: View {
+    var body: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            
+            // Абстрактные фигуры для глубины
+            Circle()
+                .fill(Theme.primary.opacity(0.1))
+                .frame(width: 300, height: 300)
+                .blur(radius: 80)
+                .offset(x: -100, y: -200)
+            
+            Circle()
+                .fill(Theme.secondary.opacity(0.1))
+                .frame(width: 400, height: 400)
+                .blur(radius: 100)
+                .offset(x: 150, y: 300)
+            
+            Circle()
+                .fill(Theme.accent.opacity(0.1))
+                .frame(width: 200, height: 200)
+                .blur(radius: 60)
+                .offset(x: 50, y: -50)
+        }
+    }
+}
+
+// MARK: - HEX Helper
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (1, 1, 1, 0)
+        }
+
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue:  Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+}
+
+// Расширение для создания градиентов из массива цветов
+extension Array where Element == Color {
+    func linearGradient(startPoint: UnitPoint = .topLeading, endPoint: UnitPoint = .bottomTrailing) -> LinearGradient {
+        LinearGradient(colors: self, startPoint: startPoint, endPoint: endPoint)
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/EmptyStateView.swift
+================================================================================
+
+// SBRA PWA/Views/Main/EmptyStateView.swift
+import SwiftUI
+
+struct EmptyStateView: View {
+    let icon: String
+    let title: String
+    let message: String
+    let buttonTitle: String
+    let action: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: icon)
+                .font(.system(size: 60))
+                .foregroundColor(Theme.textTertiary)
+            
+            Text(title)
+                .font(.title2.weight(.medium))
+                .foregroundColor(Theme.textPrimary)
+            
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+            
+            Button(action: action) {
+                Label(buttonTitle, systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GlassButtonStyle())
+            .frame(width: 200)
+            .padding(.top)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -4291,95 +5337,169 @@ struct HistoryRow: View {
 FILE: SBRA PWA/Views/Main/MainTabView.swift
 ================================================================================
 
+// SBRA PWA/Views/Main/MainTabView.swift
 import SwiftUI
 
 struct MainTabView: View {
     @State private var selectedTab = 0
     @StateObject private var authViewModel = AuthViewModel()
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            ProcessingView()
-                .tabItem {
-                    Label("Обработки", systemImage: "play.circle")
-                }
-                .tag(0)
+        ZStack {
+            // Фоновый слой
+            MeshBackground()
             
-            TasksView()
-                .tabItem {
-                    Label("Задачи", systemImage: "clock")
-                }
-                .tag(1)
-            
-            HistoryView()
-                .tabItem {
-                    Label("История", systemImage: "list.bullet")
-                }
-                .tag(2)
-            
-            AccountGroupsView()
-                .tabItem {
-                    Label("Группы", systemImage: "folder")
-                }
-                .tag(3)
-            
-            BalanceReportView()
-                .tabItem {
-                    Label("Остатки", systemImage: "chart.pie")
-                }
-                .tag(4)
-            
-            CardActivationView()
-                .tabItem {
-                    Label("Активация", systemImage: "creditcard")
-                }
-                .tag(5)
-            
-            WhiteListView()
-                .tabItem {
-                    Label("Белый список", systemImage: "checkmark.seal")
-                }
-                .tag(6)
-            
-            // Новая вкладка настроек/выхода
-            VStack(spacing: 20) {
-                Image(systemName: "person.circle")
-                    .font(.system(size: 80))
-                    .foregroundColor(.blue)
+            // Основной контент
+            TabView(selection: $selectedTab) {
+                ProcessingView()
+                    .tabItem {
+                        Label("Обработки", systemImage: "play.circle.fill")
+                    }
+                    .tag(0)
                 
-                Text(authViewModel.username)
-                    .font(.title2)
-                    .fontWeight(.bold)
+                TasksView()
+                    .tabItem {
+                        Label("Задачи", systemImage: "clock.badge.checkmark")
+                    }
+                    .tag(1)
                 
-                Button(action: {
-                    authViewModel.logout()
-                }) {
-                    Text("Выйти из аккаунта")
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.red)
-                        .cornerRadius(10)
-                }
-                .padding(.horizontal, 40)
+                HistoryView()
+                    .tabItem {
+                        Label("История", systemImage: "list.bullet.rectangle")
+                    }
+                    .tag(2)
+                
+                AccountGroupsView()
+                    .tabItem {
+                        Label("Группы", systemImage: "folder.circle")
+                    }
+                    .tag(3)
+                
+                BalanceReportView()
+                    .tabItem {
+                        Label("Остатки", systemImage: "chart.pie.fill")
+                    }
+                    .tag(4)
+                
+                CardActivationView()
+                    .tabItem {
+                        Label("Активация", systemImage: "creditcard.and.123")
+                    }
+                    .tag(5)
+                
+                WhiteListView()
+                    .tabItem {
+                        Label("Белый список", systemImage: "checkmark.seal.fill")
+                    }
+                    .tag(6)
+                
+                // Профиль
+                ProfileView(authViewModel: authViewModel)
+                    .tabItem {
+                        Label("Профиль", systemImage: "person.crop.circle.fill")
+                    }
+                    .tag(7)
             }
-            .tabItem {
-                Label("Профиль", systemImage: "person.circle")
+            .tint(Theme.primary)
+            .onAppear {
+                // Настройка внешнего вида TabBar для iOS
+                setupTabBarAppearance()
             }
-            .tag(7)
         }
-        .buttonStyle(HapticButtonStyle())
-        .accentColor(.blue)
-        .onReceive(authViewModel.$isAuthenticated) { isAuthenticated in
-            if !isAuthenticated {
-                // Переход на экран входа
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = windowScene.windows.first {
-                    window.rootViewController = UIHostingController(rootView: LoginView())
-                    UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve, animations: nil, completion: nil)
-                    window.makeKeyAndVisible()
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                // Проверяем аутентификацию при активации приложения
+                if !TokenManager.shared.isAuthenticated && authViewModel.isAuthenticated {
+                    authViewModel.logout()
                 }
+            }
+        }
+    }
+    
+    private func setupTabBarAppearance() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.3)
+        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+        
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
+    }
+}
+
+// Выносим профиль в отдельное вью для чистоты
+struct ProfileView: View {
+    @ObservedObject var authViewModel: AuthViewModel
+    @State private var showingLogoutAlert = false
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Аватар
+                    Circle()
+                        .fill(Theme.primaryGradient)
+                        .frame(width: 100, height: 100)
+                        .overlay(
+                            Text(String(authViewModel.username.prefix(1)).uppercased())
+                                .font(.largeTitle.weight(.bold))
+                                .foregroundColor(.white)
+                        )
+                        .shadow(color: Theme.primary.opacity(0.3), radius: 20, x: 0, y: 10)
+                    
+                    Text(authViewModel.username)
+                        .font(.title2.weight(.bold))
+                        .foregroundColor(Theme.textPrimary)
+                    
+                    // Карточка с информацией
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Label("Версия приложения", systemImage: "apps.iphone")
+                                .font(.headline)
+                            
+                            HStack {
+                                Text("1.0.0 (2026)")
+                                    .foregroundColor(Theme.textSecondary)
+                                Spacer()
+                                Text("Актуально")
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Theme.success.opacity(0.1))
+                                    .foregroundColor(Theme.success)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .padding()
+                    }
+                    .padding(.horizontal)
+                    
+                    // Кнопка выхода
+                    Button(action: {
+                        showingLogoutAlert = true
+                    }) {
+                        HStack {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                            Text("Выйти из аккаунта")
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .padding(.horizontal)
+                }
+                .padding(.top, 40)
+            }
+            .navigationTitle("Профиль")
+            .navigationBarTitleDisplayMode(.inline)
+            .background(MeshBackground())
+            .alert("Выход из аккаунта", isPresented: $showingLogoutAlert) {
+                Button("Отмена", role: .cancel) { }
+                Button("Выйти", role: .destructive) {
+                    print("ProfileView: Logout button pressed")
+                    authViewModel.logout()
+                }
+            } message: {
+                Text("Вы уверены, что хотите выйти?")
             }
         }
     }
@@ -4395,41 +5515,223 @@ struct MainTabView_Previews: PreviewProvider {
 [Кодировка: utf-8]
 
 ================================================================================
+FILE: SBRA PWA/Views/Main/ModernTextFieldStyle.swift
+================================================================================
+
+// SBRA PWA/Views/Main/ModernTextFieldStyle.swift
+import SwiftUI
+
+struct ModernTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemGray6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Theme.textTertiary.opacity(0.3), lineWidth: 1)
+            )
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
+FILE: SBRA PWA/Views/Main/ProcessingDetailModal.swift
+================================================================================
+
+// SBRA PWA/Views/Main/ProcessingDetailModal.swift
+import SwiftUI
+
+struct ProcessingDetailModal: View {
+    let processing: AvailableProcessing
+    @ObservedObject var viewModel: ProcessingViewModel
+    @Binding var isPresented: Bool
+    @State private var parameters = ""
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                MeshBackground()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Информация о processing
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label(processing.name, systemImage: "gearshape.2")
+                                    .font(.headline)
+                                    .foregroundColor(Theme.textPrimary)
+                                
+                                if let description = processing.description {
+                                    Text(description)
+                                        .font(.subheadline)
+                                        .foregroundColor(Theme.textSecondary)
+                                }
+                                
+                                HStack {
+                                    Text("Код:")
+                                        .font(.caption)
+                                        .foregroundColor(Theme.textTertiary)
+                                    Text(processing.code)
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Theme.primary.opacity(0.1))
+                                        .foregroundColor(Theme.primary)
+                                        .cornerRadius(8)
+                                }
+                            }
+                            .padding()
+                        }
+                        
+                        // Проверка для STREAM_RUSLAN
+                        if processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0 {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(Theme.warning)
+                                Text("Для обработки STREAM_RUSLAN необходимо сначала загрузить Excel файл")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.warning)
+                            }
+                            .padding()
+                            .background(Theme.warning.opacity(0.1))
+                            .cornerRadius(12)
+                        }
+                        
+                        // Параметры
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("Параметры", systemImage: "slider.horizontal.3")
+                                    .font(.headline)
+                                    .foregroundColor(Theme.textPrimary)
+                                
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Группа")
+                                        .font(.caption)
+                                        .foregroundColor(Theme.textSecondary)
+                                    
+                                    TextField("Например: STREAM_%", text: $parameters)
+                                        .textFieldStyle(ModernTextFieldStyle())
+                                    
+                                    if !viewModel.availableGroups.isEmpty {
+                                        Text("Или выберите из списка:")
+                                            .font(.caption)
+                                            .foregroundColor(Theme.textSecondary)
+                                            .padding(.top, 8)
+                                        
+                                        ScrollView(.horizontal, showsIndicators: false) {
+                                            HStack {
+                                                ForEach(viewModel.availableGroups, id: \.self) { group in
+                                                    Button(action: {
+                                                        parameters = group
+                                                    }) {
+                                                        Text(group)
+                                                            .font(.caption)
+                                                            .padding(.horizontal, 12)
+                                                            .padding(.vertical, 6)
+                                                            .background(parameters == group ? Theme.primary : Theme.primary.opacity(0.1))
+                                                            .foregroundColor(parameters == group ? .white : Theme.primary)
+                                                            .cornerRadius(20)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding()
+                        }
+                        
+                        // Кнопка запуска
+                        Button(action: {
+                            viewModel.executeProcessing(parameters: parameters)
+                        }) {
+                            if viewModel.isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                HStack {
+                                    Image(systemName: "play.fill")
+                                    Text("Запустить обработку")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .disabled(
+                            (processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0) ||
+                            viewModel.isLoading
+                        )
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle(processing.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: {
+                        isPresented = false
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+            }
+            .onReceive(viewModel.successPublisher) { _ in
+                isPresented = false
+            }
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
 FILE: SBRA PWA/Views/Main/ProcessingView.swift
 ================================================================================
 
+// SBRA PWA/Views/Main/ProcessingView.swift
 import SwiftUI
-
-// SBRA PWA/Views/Main/ProcessingView.swift - часть с fileImporter
 
 struct ProcessingView: View {
     @StateObject private var viewModel = ProcessingViewModel()
     @State private var showingProcessingModal = false
-    // Убираем @State private var showingFilePicker = false, так как теперь используем viewModel.showFilePicker
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 16) {
-                    // Секция загрузки Excel файла
+                VStack(spacing: 24) {
                     ExcelUploadSection(viewModel: viewModel)
+                        .transition(.scale.combined(with: .opacity))
                     
-                    // Секция доступных обработок
                     ProcessingsSection(
                         viewModel: viewModel,
                         showingModal: $showingProcessingModal
                     )
                 }
-                .padding()
+                .padding(.horizontal)
+                .padding(.vertical, 8)
             }
+            .background(MeshBackground())
             .navigationTitle("Обработки")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        viewModel.loadProcessings()
+                        withAnimation(.spring()) {
+                            viewModel.loadProcessings()
+                        }
                     }) {
                         Image(systemName: "arrow.clockwise")
+                            .font(.headline)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
@@ -4442,158 +5744,194 @@ struct ProcessingView: View {
                     )
                 }
             }
-            // ИСПРАВЛЕНО: Используем viewModel.showFilePicker вместо локальной переменной
             .fileImporter(
-                isPresented: $viewModel.showFilePicker,  // ← Изменено здесь
+                isPresented: $viewModel.showFilePicker,
                 allowedContentTypes: [.excel],
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
-                    viewModel.handleSelectedFile(url: url)
+                    withAnimation {
+                        viewModel.handleSelectedFile(url: url)
+                    }
                 case .failure(let error):
                     viewModel.errorMessage = error.localizedDescription
+                    viewModel.showError(error.localizedDescription)
                 }
             }
             .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil && !showingProcessingModal },
+                get: { viewModel.errorMessage != nil },
                 set: { if !$0 { viewModel.errorMessage = nil } }
             )) {
-                Button("OK") {
-                    viewModel.errorMessage = nil
-                }
+                Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
-            .toast(message: $viewModel.toastMessage)
+            .toast(toast: $viewModel.toast)
         }
     }
 }
 
+// MARK: - Excel Upload Section
 struct ExcelUploadSection: View {
     @ObservedObject var viewModel: ProcessingViewModel
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundColor(.yellow)
-                Text("Для группы STREAM_RUSLAN необходимо загрузить Excel файл")
-                    .font(.subheadline)
-            }
-            .padding()
-            .background(Color.yellow.opacity(0.1))
-            .cornerRadius(8)
-            
-            if let file = viewModel.selectedFile {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Загрузка данных", systemImage: "externaldrive.badge.plus")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(Theme.textPrimary)
+                
+                // Информационный блок
                 HStack {
-                    Image(systemName: "doc")
-                    Text(file.lastPathComponent)
-                    Spacer()
-                    Text(viewModel.formatFileSize(file.fileSize))
-                        .foregroundColor(.gray)
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(Theme.info)
+                    Text("Для группы STREAM_RUSLAN необходим Excel файл")
+                        .font(.subheadline)
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            HStack {
-                Button(action: { viewModel.selectFile() }) {
-                    Label("Выбрать файл", systemImage: "doc.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                .background(Theme.info.opacity(0.1))
+                .cornerRadius(12)
                 
-                if viewModel.selectedFile != nil {
-                    Button(action: { viewModel.uploadFile() }) {
-                        if viewModel.isUploading {
-                            ProgressView()
-                        } else {
-                            Label("Загрузить", systemImage: "arrow.up.doc")
-                                .frame(maxWidth: .infinity)
+                if let file = viewModel.selectedFile {
+                    HStack {
+                        Image(systemName: "doc.fill")
+                            .foregroundColor(Theme.primary)
+                        Text(file.lastPathComponent)
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textPrimary)
+                        Spacer()
+                        Text(viewModel.formatFileSize(file.fileSize))
+                            .font(.caption)
+                            .foregroundColor(Theme.textTertiary)
+                    }
+                    .padding()
+                    .background(Theme.cardBackgroundSecondary)
+                    .cornerRadius(12)
+                    .transition(.slide.combined(with: .opacity))
+                }
+                
+                HStack {
+                    Button(action: { viewModel.selectFile() }) {
+                        Label("Выбрать файл", systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    
+                    if viewModel.selectedFile != nil {
+                        Button(action: {
+                            withAnimation {
+                                viewModel.uploadFile()
+                            }
+                        }) {
+                            if viewModel.isUploading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Label("Загрузить", systemImage: "arrow.up.doc")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .disabled(viewModel.isUploading)
+                    }
+                }
+                
+                if let result = viewModel.uploadResult {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .foregroundColor(result.success ? Theme.success : Theme.danger)
+                                .font(.title3)
+                            Text(result.message)
+                                .font(.subheadline)
+                                .foregroundColor(Theme.textPrimary)
+                        }
+                        
+                        if let cardCount = result.cardCount {
+                            Text("\(cardCount) карт(ы) в файле")
+                                .font(.caption)
+                                .foregroundColor(Theme.textSecondary)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isUploading)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(result.success ? Theme.success.opacity(0.1) : Theme.danger.opacity(0.1))
+                    )
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
-            
-            if let result = viewModel.uploadResult {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundColor(result.success ? .green : .red)
-                        Text(result.message)
-                            .font(.subheadline)
-                    }
-                    
-                    if let cardCount = result.cardCount {
-                        Text("В таблице карт: \(cardCount)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                }
-                .padding()
-                .background(result.success ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Divider()
         }
     }
 }
 
+// MARK: - Processings Section
 struct ProcessingsSection: View {
     @ObservedObject var viewModel: ProcessingViewModel
     @Binding var showingModal: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Доступные обработки")
-                    .font(.headline)
-                Spacer()
-                Text("\(viewModel.processings.count)")
-                    .font(.caption)
-                    .padding(5)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .clipShape(Circle())
-            }
-            
-            if viewModel.isLoading {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
+                    Label("Доступные обработки", systemImage: "gearshape.2.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(Theme.textPrimary)
+                    
                     Spacer()
-                    ProgressView()
-                    Spacer()
+                    
+                    Text("\(viewModel.processings.count)")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Theme.primary)
+                        .clipShape(Capsule())
                 }
-                .padding()
-            } else if viewModel.processings.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "tray")
-                        .font(.largeTitle)
-                        .foregroundColor(.gray)
-                    Text("Нет доступных обработок")
-                        .foregroundColor(.gray)
-                    Button("Загрузить") {
-                        viewModel.loadProcessings()
+                
+                if viewModel.isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(Theme.primary)
+                            .scaleEffect(1.2)
+                        Spacer()
                     }
-                    .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-            } else {
-                LazyVStack(spacing: 8) {
-                    ForEach(viewModel.processings) { processing in
-                        ProcessingRow(
-                            processing: processing,
-                            onSelect: {
-                                viewModel.selectedProcessing = processing
-                                showingModal = true
+                    .padding()
+                } else if viewModel.processings.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "tray")
+                            .font(.largeTitle)
+                            .foregroundColor(Theme.textTertiary)
+                        Text("Нет доступных обработок")
+                            .foregroundColor(Theme.textSecondary)
+                        Button("Загрузить") {
+                            withAnimation {
+                                viewModel.loadProcessings()
                             }
-                        )
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .frame(width: 200)
+                    }
+                    .padding()
+                } else {
+                    LazyVStack(spacing: 8) {
+                        ForEach(viewModel.processings) { processing in
+                            ProcessingRow(
+                                processing: processing,
+                                onSelect: {
+                                    viewModel.selectedProcessing = processing
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                        showingModal = true
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -4601,6 +5939,7 @@ struct ProcessingsSection: View {
     }
 }
 
+// MARK: - Processing Row
 struct ProcessingRow: View {
     let processing: AvailableProcessing
     let onSelect: () -> Void
@@ -4608,30 +5947,42 @@ struct ProcessingRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack {
+                // Иконка слева
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.primary.opacity(0.1))
+                    .frame(width: 50, height: 50)
+                    .overlay(
+                        Image(systemName: processing.code == "STREAM_RUSLAN" ? "externaldrive" : "doc.text.magnifyingglass")
+                            .foregroundColor(Theme.primary)
+                            .font(.title3)
+                    )
+                
                 VStack(alignment: .leading, spacing: 4) {
                     Text(processing.name)
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundColor(Theme.textPrimary)
                     
                     if let description = processing.description {
                         Text(description)
                             .font(.caption)
-                            .foregroundColor(.gray)
-                            .lineLimit(1)
+                            .foregroundColor(Theme.textTertiary)
                     }
                     
                     HStack {
                         Text(processing.code)
                             .font(.caption2)
-                            .padding(4)
-                            .background(Color.gray.opacity(0.2))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.textTertiary.opacity(0.2))
                             .cornerRadius(4)
                         
                         if processing.code == "STREAM_RUSLAN" {
                             Text("требуется файл")
                                 .font(.caption2)
-                                .padding(4)
-                                .background(Color.yellow.opacity(0.2))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Theme.warning.opacity(0.2))
+                                .foregroundColor(Theme.warning)
                                 .cornerRadius(4)
                         }
                     }
@@ -4640,95 +5991,18 @@ struct ProcessingRow: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .foregroundColor(.blue)
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(Theme.textTertiary)
             }
             .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(10)
-            .shadow(color: .gray.opacity(0.1), radius: 5)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Theme.cardBackground)
+                    .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+            )
         }
-    }
-}
-
-struct ProcessingDetailModal: View {
-    let processing: AvailableProcessing
-    @ObservedObject var viewModel: ProcessingViewModel
-    @Binding var isPresented: Bool
-    @State private var parameters = ""
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                Form {
-                    if processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0 {
-                        Section {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .foregroundColor(.yellow)
-                                Text("Для обработки STREAM_RUSLAN необходимо сначала загрузить Excel файл")
-                                    .font(.caption)
-                            }
-                        }
-                    }
-                    
-                    Section(header: Text("Параметры")) {
-                        TextField("Группа (например: STREAM_%)", text: $parameters)
-                        
-                        Picker("Выберите из истории", selection: $parameters) {
-                            Text("").tag("")
-                            ForEach(viewModel.availableGroups, id: \.self) { group in
-                                Text(group).tag(group)
-                            }
-                        }
-                    }
-                    
-                    Section {
-                        Text("Выполняется процедура: \(processing.description ?? "")")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                Button(action: {
-                    viewModel.executeProcessing(parameters: parameters)
-                }) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        Text("Запустить обработку")
-                            .frame(maxWidth: .infinity)
-                            .fontWeight(.bold)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding()
-                .disabled(processing.code == "STREAM_RUSLAN" && (viewModel.uploadResult?.cardCount ?? 0) == 0 || viewModel.isLoading)
-            }
-            .navigationTitle(processing.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") {
-                        isPresented = false
-                    }
-                }
-            }
-            .onReceive(viewModel.successPublisher) { _ in
-                isPresented = false
-            }
-            .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.errorMessage = nil } }
-            )) {
-                Button("OK") {
-                    viewModel.errorMessage = nil
-                }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
-            }
-        }
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(1.0)
     }
 }
 
@@ -4885,6 +6159,7 @@ struct TaskRow: View {
 FILE: SBRA PWA/Views/Main/WhiteListView.swift
 ================================================================================
 
+// SBRA PWA/Views/Main/WhiteListView.swift (исправляем toast)
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -4895,15 +6170,10 @@ struct WhiteListView: View {
     @State private var showAddCardSheet = false
     @State private var showImportSheet = false
     
-    // For adding single card
     @State private var newCardNum = ""
     @State private var newGroup = ""
-    
-    // Deletion confirmation
     @State private var showingDeleteConfirmation = false
     @State private var cardToDelete: WhiteListCard?
-    
-    // For file import
     @State private var showFilePicker = false
     
     var filteredCards: [WhiteListCard] {
@@ -4922,55 +6192,55 @@ struct WhiteListView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                Color(.systemGroupedBackground).ignoresSafeArea()
+                MeshBackground()
                 
                 VStack(spacing: 0) {
                     // Search and Filter
                     VStack(spacing: 12) {
                         HStack {
                             Image(systemName: "magnifyingglass")
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                             TextField("Поиск по номеру карты", text: $searchText)
                                 .keyboardType(.numberPad)
                                 .onChange(of: searchText) { newValue in
                                     searchText = newValue.formattedCardNumber()
                                 }
                         }
-                        .padding(10)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .cornerRadius(10)
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Theme.cardBackground.opacity(0.8))
+                        )
+                        .padding(.horizontal)
                         
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack {
                                 ForEach(groups, id: \.self) { group in
                                     FilterButton(title: group, isSelected: selectedGroup == group) {
-                                        selectedGroup = group
+                                        withAnimation {
+                                            selectedGroup = group
+                                        }
                                     }
                                 }
                             }
+                            .padding(.horizontal)
                         }
                     }
-                    .padding()
-                    .background(Color(.systemBackground))
+                    .padding(.vertical)
                     
                     if viewModel.isLoading && viewModel.cards.isEmpty {
                         Spacer()
-                        ProgressView("Загрузка...")
+                        ProgressView()
+                            .tint(Theme.primary)
                         Spacer()
                     } else if filteredCards.isEmpty {
-                        VStack(spacing: 20) {
-                            Spacer()
-                            Image(systemName: "creditcard.and.123")
-                                .font(.system(size: 60))
-                                .foregroundColor(.secondary)
-                            Text("Карт не найдено")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            Button(action: { viewModel.loadCards() }) {
-                                Label("Обновить", systemImage: "arrow.clockwise")
-                            }
-                            Spacer()
-                        }
+                        EmptyStateView(
+                            icon: "creditcard.and.123",
+                            title: "Карт не найдено",
+                            message: "Добавьте карты в белый список",
+                            buttonTitle: "Обновить",
+                            action: { viewModel.loadCards() }
+                        )
                     } else {
                         List {
                             ForEach(filteredCards) { card in
@@ -4980,7 +6250,8 @@ struct WhiteListView: View {
                                 }
                             }
                         }
-                        .listStyle(InsetGroupedListStyle())
+                        .listStyle(.plain)
+                        .background(Color.clear)
                         .refreshable {
                             viewModel.loadCards()
                         }
@@ -4988,7 +6259,7 @@ struct WhiteListView: View {
                 }
             }
             .navigationTitle("Белый список")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -5001,66 +6272,13 @@ struct WhiteListView: View {
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
-            // Add Single Card Sheet
             .sheet(isPresented: $showAddCardSheet) {
-                NavigationView {
-                    VStack(spacing: 0) {
-                        Form {
-                            Section(header: Text("Данные карты")) {
-                                TextField("Номер карты", text: $newCardNum)
-                                    .keyboardType(.numberPad)
-                                    .onChange(of: newCardNum) { newValue in
-                                        newCardNum = newValue.formattedCardNumber()
-                                    }
-                                TextField("Тип/Группа", text: $newGroup)
-                            }
-                        }
-                        
-                        Button(action: {
-                            let cleanNumber = newCardNum.replacingOccurrences(of: " ", with: "")
-                            viewModel.addSingleCard(cardNum: cleanNumber, typeCon: newGroup)
-                            newCardNum = ""
-                            newGroup = ""
-                        }) {
-                            if viewModel.isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            } else {
-                                Text("Добавить в белый список")
-                                    .frame(maxWidth: .infinity)
-                                    .fontWeight(.bold)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .padding()
-                        .disabled(newCardNum.isEmpty || newGroup.isEmpty || viewModel.isLoading)
-                    }
-                    .navigationTitle("Новая карта")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Отмена") { showAddCardSheet = false }
-                        }
-                    }
-                    .onReceive(viewModel.successPublisher) { _ in
-                        showAddCardSheet = false
-                    }
-                    .alert("Ошибка", isPresented: Binding(
-                        get: { viewModel.errorMessage != nil },
-                        set: { if !$0 { viewModel.errorMessage = nil } }
-                    )) {
-                        Button("OK", role: .cancel) {}
-                    } message: {
-                        Text(viewModel.errorMessage ?? "")
-                    }
-                }
+                AddCardSheet(viewModel: viewModel, isPresented: $showAddCardSheet)
             }
-            // File Picker
             .fileImporter(
                 isPresented: $showFilePicker,
                 allowedContentTypes: [.spreadsheet, .commaSeparatedText],
@@ -5075,15 +6293,6 @@ struct WhiteListView: View {
                     viewModel.errorMessage = error.localizedDescription
                 }
             }
-            // Error Alert
-            .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil && !showAddCardSheet },
-                set: { if !$0 { viewModel.errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(viewModel.errorMessage ?? "")
-            }
             .alert("Удаление карты", isPresented: $showingDeleteConfirmation) {
                 Button("Отмена", role: .cancel) {}
                 Button("Удалить", role: .destructive) {
@@ -5094,7 +6303,83 @@ struct WhiteListView: View {
             } message: {
                 Text("Вы уверены, что хотите удалить карту \(cardToDelete?.cardNum ?? "") из белого списка?")
             }
-            .toast(message: $viewModel.toastMessage)
+            .toast(toast: $viewModel.toast) // ИСПРАВЛЕНО
+        }
+    }
+}
+
+struct AddCardSheet: View {
+    @ObservedObject var viewModel: WhiteListViewModel
+    @Binding var isPresented: Bool
+    @State private var newCardNum = ""
+    @State private var newGroup = ""
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                MeshBackground()
+                
+                VStack(spacing: 20) {
+                    GlassCard {
+                        VStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Номер карты")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
+                                TextField("Введите номер карты", text: $newCardNum)
+                                    .textFieldStyle(ModernTextFieldStyle())
+                                    .keyboardType(.numberPad)
+                                    .onChange(of: newCardNum) { newValue in
+                                        newCardNum = newValue.formattedCardNumber()
+                                    }
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Группа")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
+                                TextField("STREAM_%", text: $newGroup)
+                                    .textFieldStyle(ModernTextFieldStyle())
+                            }
+                        }
+                        .padding()
+                    }
+                    
+                    Button(action: {
+                        let cleanNumber = newCardNum.replacingOccurrences(of: " ", with: "")
+                        viewModel.addSingleCard(cardNum: cleanNumber, typeCon: newGroup)
+                        newCardNum = ""
+                        newGroup = ""
+                    }) {
+                        if viewModel.isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Добавить в белый список")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                    .disabled(newCardNum.isEmpty || newGroup.isEmpty || viewModel.isLoading)
+                }
+                .padding()
+            }
+            .navigationTitle("Новая карта")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: {
+                        isPresented = false
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+            }
+            .onReceive(viewModel.successPublisher) { _ in
+                isPresented = false
+            }
         }
     }
 }
@@ -5105,32 +6390,50 @@ struct WhiteListCardRow: View {
     
     var body: some View {
         HStack {
+            // Иконка
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.primary.opacity(0.1))
+                .frame(width: 50, height: 50)
+                .overlay(
+                    Image(systemName: "creditcard")
+                        .foregroundColor(Theme.primary)
+                        .font(.title3)
+                )
+            
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.cardNum)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.medium)
+                    .font(.system(.headline, design: .monospaced))
+                    .foregroundColor(Theme.textPrimary)
+                
                 Text(card.typeCon)
                     .font(.caption)
-                    .foregroundColor(.white)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.blue.opacity(0.8))
-                    .cornerRadius(4)
+                    .padding(.vertical, 4)
+                    .background(Theme.primary.opacity(0.1))
+                    .foregroundColor(Theme.primary)
+                    .cornerRadius(8)
             }
             
             Spacer()
             
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
-                    .foregroundColor(.red)
+                    .foregroundColor(Theme.danger)
+                    .font(.headline)
             }
-            .buttonStyle(BorderlessButtonStyle())
+            .buttonStyle(PlainButtonStyle())
         }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.cardBackground)
+                .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+        )
+        .padding(.horizontal)
         .padding(.vertical, 4)
     }
 }
 
-// Reuse FilterButton or define here if not global
 struct FilterButton: View {
     let title: String
     let isSelected: Bool
@@ -5143,16 +6446,14 @@ struct FilterButton: View {
                 .fontWeight(isSelected ? .bold : .regular)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(isSelected ? Color.blue : Color(.secondarySystemGroupedBackground))
-                .foregroundColor(isSelected ? .white : .primary)
+                .background(isSelected ? Theme.primary : Theme.cardBackground.opacity(0.8))
+                .foregroundColor(isSelected ? .white : Theme.textPrimary)
                 .cornerRadius(20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(isSelected ? Color.clear : Theme.textTertiary.opacity(0.3), lineWidth: 1)
+                )
         }
-    }
-}
-
-struct WhiteListView_Previews: PreviewProvider {
-    static var previews: some View {
-        WhiteListView()
     }
 }
 
@@ -5162,9 +6463,9 @@ struct WhiteListView_Previews: PreviewProvider {
 ================================================================================
 ИТОГИ СБОРКИ
 ================================================================================
-✅ Успешно прочитано: 33
+✅ Успешно прочитано: 38
 ❌ Ошибок чтения: 0
-📊 Всего обработано: 33
+📊 Всего обработано: 38
 
-🕒 Дата завершения: 2026-03-07 18:12:24
+🕒 Дата завершения: 2026-03-07 21:41:58
 ================================================================================

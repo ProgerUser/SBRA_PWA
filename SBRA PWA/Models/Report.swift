@@ -1,3 +1,4 @@
+// SBRA PWA/Models/Report.swift
 import Foundation
 
 struct ReportInfo: Codable, Identifiable {
@@ -27,7 +28,6 @@ struct ReportInfo: Codable, Identifiable {
 }
 
 // MARK: - Generic API Response Types
-
 struct UploadResponse: Codable {
     let message: String
     let filename: String?
@@ -43,7 +43,6 @@ struct MessageResponse: Codable {
 }
 
 // MARK: - White List
-
 struct WhiteListCard: Codable, Identifiable {
     let cardNum: String
     let typeCon: String
@@ -65,8 +64,7 @@ struct WhiteListResponse: Codable {
 }
 
 // MARK: - Balance Report
-
-struct BalanceReportItem: Codable, Identifiable {
+struct BalanceReportItem: Codable, Identifiable, Equatable {
     let type: String
     let groupName: String
     let rest: Double
@@ -90,8 +88,14 @@ struct BalanceReportItem: Codable, Identifiable {
                   let doubleValue = Double(stringValue) {
             rest = doubleValue
         } else {
-            rest = 0.0 // Default value or throw error if preferred
+            rest = 0.0
         }
+    }
+    
+    static func == (lhs: BalanceReportItem, rhs: BalanceReportItem) -> Bool {
+        return lhs.type == rhs.type &&
+               lhs.groupName == rhs.groupName &&
+               lhs.rest == rhs.rest
     }
     
     var formattedRest: String {
@@ -131,7 +135,6 @@ struct BalanceReportDetailedResponse: Codable {
 }
 
 // MARK: - History Item
-
 struct HistoryItem: Codable, Identifiable {
     let operDate: String
     let groupType: String

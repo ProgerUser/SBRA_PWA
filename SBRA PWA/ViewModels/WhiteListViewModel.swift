@@ -1,14 +1,15 @@
+// SBRA PWA/ViewModels/WhiteListViewModel.swift
 import Foundation
 import Combine
 import UIKit
 
-class WhiteListViewModel: ObservableObject {
+class WhiteListViewModel: ObservableObject, ToastCapable { // Добавляем ToastCapable
     @Published var cards: [WhiteListCard] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var showSuccessMessage = false
     @Published var successMessage: String?
-    @Published var toastMessage: String?
+    @Published var toast: Toast? // Изменено с toastMessage
     
     private var cancellables = Set<AnyCancellable>()
     private let apiService = APIService.shared
@@ -28,6 +29,7 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] cards in
                 self?.cards = cards
@@ -44,9 +46,10 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] response in
-                self?.triggerToast("Карта успешно добавлена")
+                self?.showSuccess("Карта успешно добавлена")
                 self?.successPublisher.send()
                 self?.loadCards()
             }
@@ -56,6 +59,7 @@ class WhiteListViewModel: ObservableObject {
     func uploadWhiteListFile(fileURL: URL) {
         guard let data = try? Data(contentsOf: fileURL) else {
             self.errorMessage = "Не удалось прочитать файл"
+            self.showError("Не удалось прочитать файл")
             return
         }
         
@@ -67,9 +71,10 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] response in
-                self?.triggerToast("Файл успешно загружен. Обработано \(response.count ?? 0) карт")
+                self?.showSuccess("Файл успешно загружен. Обработано \(response.count ?? 0) карт")
                 self?.successPublisher.send()
                 self?.loadCards()
             }
@@ -85,9 +90,10 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Карта успешно удалена")
+                self?.showSuccess("Карта успешно удалена")
                 self?.loadCards()
             }
             .store(in: &cancellables)
@@ -102,20 +108,12 @@ class WhiteListViewModel: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = error.localizedDescription
+                    self?.showError(error.localizedDescription)
                 }
             } receiveValue: { [weak self] _ in
-                self?.triggerToast("Группа успешно очищена")
+                self?.showSuccess("Группа успешно очищена")
                 self?.loadCards()
             }
             .store(in: &cancellables)
-    }
-    
-    private func triggerToast(_ message: String) {
-        toastMessage = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if self.toastMessage == message {
-                self.toastMessage = nil
-            }
-        }
     }
 }

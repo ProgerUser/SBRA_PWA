@@ -1,3 +1,4 @@
+// SBRA PWA/Views/Main/WhiteListView.swift (исправляем toast)
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -8,15 +9,10 @@ struct WhiteListView: View {
     @State private var showAddCardSheet = false
     @State private var showImportSheet = false
     
-    // For adding single card
     @State private var newCardNum = ""
     @State private var newGroup = ""
-    
-    // Deletion confirmation
     @State private var showingDeleteConfirmation = false
     @State private var cardToDelete: WhiteListCard?
-    
-    // For file import
     @State private var showFilePicker = false
     
     var filteredCards: [WhiteListCard] {
@@ -35,55 +31,55 @@ struct WhiteListView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                Color(.systemGroupedBackground).ignoresSafeArea()
+                MeshBackground()
                 
                 VStack(spacing: 0) {
                     // Search and Filter
                     VStack(spacing: 12) {
                         HStack {
                             Image(systemName: "magnifyingglass")
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                             TextField("Поиск по номеру карты", text: $searchText)
                                 .keyboardType(.numberPad)
                                 .onChange(of: searchText) { newValue in
                                     searchText = newValue.formattedCardNumber()
                                 }
                         }
-                        .padding(10)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .cornerRadius(10)
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Theme.cardBackground.opacity(0.8))
+                        )
+                        .padding(.horizontal)
                         
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack {
                                 ForEach(groups, id: \.self) { group in
                                     FilterButton(title: group, isSelected: selectedGroup == group) {
-                                        selectedGroup = group
+                                        withAnimation {
+                                            selectedGroup = group
+                                        }
                                     }
                                 }
                             }
+                            .padding(.horizontal)
                         }
                     }
-                    .padding()
-                    .background(Color(.systemBackground))
+                    .padding(.vertical)
                     
                     if viewModel.isLoading && viewModel.cards.isEmpty {
                         Spacer()
-                        ProgressView("Загрузка...")
+                        ProgressView()
+                            .tint(Theme.primary)
                         Spacer()
                     } else if filteredCards.isEmpty {
-                        VStack(spacing: 20) {
-                            Spacer()
-                            Image(systemName: "creditcard.and.123")
-                                .font(.system(size: 60))
-                                .foregroundColor(.secondary)
-                            Text("Карт не найдено")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            Button(action: { viewModel.loadCards() }) {
-                                Label("Обновить", systemImage: "arrow.clockwise")
-                            }
-                            Spacer()
-                        }
+                        EmptyStateView(
+                            icon: "creditcard.and.123",
+                            title: "Карт не найдено",
+                            message: "Добавьте карты в белый список",
+                            buttonTitle: "Обновить",
+                            action: { viewModel.loadCards() }
+                        )
                     } else {
                         List {
                             ForEach(filteredCards) { card in
@@ -93,7 +89,8 @@ struct WhiteListView: View {
                                 }
                             }
                         }
-                        .listStyle(InsetGroupedListStyle())
+                        .listStyle(.plain)
+                        .background(Color.clear)
                         .refreshable {
                             viewModel.loadCards()
                         }
@@ -101,7 +98,7 @@ struct WhiteListView: View {
                 }
             }
             .navigationTitle("Белый список")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -114,73 +111,13 @@ struct WhiteListView: View {
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundColor(.blue)
+                            .foregroundColor(Theme.primary)
                     }
                 }
             }
-            // Add Single Card Sheet
             .sheet(isPresented: $showAddCardSheet) {
-                NavigationView {
-                    VStack(spacing: 0) {
-                        Form {
-                            Section(header: Text("Данные карты")) {
-                                TextField("Номер карты", text: $newCardNum)
-                                    .keyboardType(.numberPad)
-                                    .onChange(of: newCardNum) { newValue in
-                                        newCardNum = newValue.formattedCardNumber()
-                                    }
-                                TextField("Тип/Группа", text: $newGroup)
-                            }
-                        }
-                        
-                        Button(action: {
-                            let cleanNumber = newCardNum.replacingOccurrences(of: " ", with: "")
-                            viewModel.addSingleCard(cardNum: cleanNumber, typeCon: newGroup)
-                            newCardNum = ""
-                            newGroup = ""
-                        }) {
-                            if viewModel.isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            } else {
-                                Text("Добавить в белый список")
-                                    .frame(maxWidth: .infinity)
-                                    .fontWeight(.bold)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .padding()
-                        .disabled(newCardNum.isEmpty || newGroup.isEmpty || viewModel.isLoading)
-                    }
-                    .navigationTitle("Новая карта")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button(action: {
-                                showAddCardSheet = false // Исправлено: showAddCardSheet вместо isPresented
-                            }) {
-                                HStack {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 16, weight: .bold))
-                                }
-                            }
-                        }
-                    }
-                    .onReceive(viewModel.successPublisher) { _ in
-                        showAddCardSheet = false
-                    }
-                    .alert("Ошибка", isPresented: Binding(
-                        get: { viewModel.errorMessage != nil },
-                        set: { if !$0 { viewModel.errorMessage = nil } }
-                    )) {
-                        Button("OK", role: .cancel) {}
-                    } message: {
-                        Text(viewModel.errorMessage ?? "")
-                    }
-                }
+                AddCardSheet(viewModel: viewModel, isPresented: $showAddCardSheet)
             }
-            // File Picker
             .fileImporter(
                 isPresented: $showFilePicker,
                 allowedContentTypes: [.spreadsheet, .commaSeparatedText],
@@ -195,15 +132,6 @@ struct WhiteListView: View {
                     viewModel.errorMessage = error.localizedDescription
                 }
             }
-            // Error Alert
-            .alert("Ошибка", isPresented: Binding(
-                get: { viewModel.errorMessage != nil && !showAddCardSheet },
-                set: { if !$0 { viewModel.errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(viewModel.errorMessage ?? "")
-            }
             .alert("Удаление карты", isPresented: $showingDeleteConfirmation) {
                 Button("Отмена", role: .cancel) {}
                 Button("Удалить", role: .destructive) {
@@ -214,7 +142,83 @@ struct WhiteListView: View {
             } message: {
                 Text("Вы уверены, что хотите удалить карту \(cardToDelete?.cardNum ?? "") из белого списка?")
             }
-            .toast(message: $viewModel.toastMessage)
+            .toast(toast: $viewModel.toast) // ИСПРАВЛЕНО
+        }
+    }
+}
+
+struct AddCardSheet: View {
+    @ObservedObject var viewModel: WhiteListViewModel
+    @Binding var isPresented: Bool
+    @State private var newCardNum = ""
+    @State private var newGroup = ""
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                MeshBackground()
+                
+                VStack(spacing: 20) {
+                    GlassCard {
+                        VStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Номер карты")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
+                                TextField("Введите номер карты", text: $newCardNum)
+                                    .textFieldStyle(ModernTextFieldStyle())
+                                    .keyboardType(.numberPad)
+                                    .onChange(of: newCardNum) { newValue in
+                                        newCardNum = newValue.formattedCardNumber()
+                                    }
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Группа")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.textSecondary)
+                                TextField("STREAM_%", text: $newGroup)
+                                    .textFieldStyle(ModernTextFieldStyle())
+                            }
+                        }
+                        .padding()
+                    }
+                    
+                    Button(action: {
+                        let cleanNumber = newCardNum.replacingOccurrences(of: " ", with: "")
+                        viewModel.addSingleCard(cardNum: cleanNumber, typeCon: newGroup)
+                        newCardNum = ""
+                        newGroup = ""
+                    }) {
+                        if viewModel.isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Добавить в белый список")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                    .disabled(newCardNum.isEmpty || newGroup.isEmpty || viewModel.isLoading)
+                }
+                .padding()
+            }
+            .navigationTitle("Новая карта")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: {
+                        isPresented = false
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+            }
+            .onReceive(viewModel.successPublisher) { _ in
+                isPresented = false
+            }
         }
     }
 }
@@ -225,32 +229,50 @@ struct WhiteListCardRow: View {
     
     var body: some View {
         HStack {
+            // Иконка
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.primary.opacity(0.1))
+                .frame(width: 50, height: 50)
+                .overlay(
+                    Image(systemName: "creditcard")
+                        .foregroundColor(Theme.primary)
+                        .font(.title3)
+                )
+            
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.cardNum)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.medium)
+                    .font(.system(.headline, design: .monospaced))
+                    .foregroundColor(Theme.textPrimary)
+                
                 Text(card.typeCon)
                     .font(.caption)
-                    .foregroundColor(.white)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.blue.opacity(0.8))
-                    .cornerRadius(4)
+                    .padding(.vertical, 4)
+                    .background(Theme.primary.opacity(0.1))
+                    .foregroundColor(Theme.primary)
+                    .cornerRadius(8)
             }
             
             Spacer()
             
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
-                    .foregroundColor(.red)
+                    .foregroundColor(Theme.danger)
+                    .font(.headline)
             }
-            .buttonStyle(BorderlessButtonStyle())
+            .buttonStyle(PlainButtonStyle())
         }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Theme.cardBackground)
+                .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+        )
+        .padding(.horizontal)
         .padding(.vertical, 4)
     }
 }
 
-// Reuse FilterButton or define here if not global
 struct FilterButton: View {
     let title: String
     let isSelected: Bool
@@ -263,15 +285,13 @@ struct FilterButton: View {
                 .fontWeight(isSelected ? .bold : .regular)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(isSelected ? Color.blue : Color(.secondarySystemGroupedBackground))
-                .foregroundColor(isSelected ? .white : .primary)
+                .background(isSelected ? Theme.primary : Theme.cardBackground.opacity(0.8))
+                .foregroundColor(isSelected ? .white : Theme.textPrimary)
                 .cornerRadius(20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(isSelected ? Color.clear : Theme.textTertiary.opacity(0.3), lineWidth: 1)
+                )
         }
-    }
-}
-
-struct WhiteListView_Previews: PreviewProvider {
-    static var previews: some View {
-        WhiteListView()
     }
 }
