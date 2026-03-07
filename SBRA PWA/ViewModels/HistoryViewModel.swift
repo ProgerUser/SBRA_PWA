@@ -1,3 +1,4 @@
+// SBRA PWA/ViewModels/HistoryViewModel.swift
 import Foundation
 import Combine
 import UIKit
@@ -141,6 +142,42 @@ class HistoryViewModel: ObservableObject {
         }
     }
     
+    // Функция для форматирования суммы в имя файла
+    private func formatSumForFilename(_ sum: Double) -> String {
+        // Разделяем на целую и дробную части
+        let integerPart = Int(sum)
+        let fractionalPart = Int(round((sum - Double(integerPart)) * 100))
+        
+        // Форматируем целую часть с подчеркиваниями каждые 3 разряда
+        let integerFormatter = NumberFormatter()
+        integerFormatter.numberStyle = .decimal
+        integerFormatter.groupingSeparator = "_"
+        integerFormatter.groupingSize = 3
+        integerFormatter.secondaryGroupingSize = 3
+        integerFormatter.maximumFractionDigits = 0
+        
+        let integerString = integerFormatter.string(from: NSNumber(value: integerPart)) ?? "\(integerPart)"
+        
+        // Добавляем дробную часть только если она не 0
+        if fractionalPart > 0 {
+            // Форматируем дробную часть с ведущим нулем если нужно (5 -> 05)
+            let fractionalString = String(format: "%02d", fractionalPart)
+            return "\(integerString)_\(fractionalString)"
+        } else {
+            return integerString
+        }
+    }
+    
+    // Функция для очистки имени группы от недопустимых символов
+    private func sanitizeGroupName(_ name: String) -> String {
+        // Заменяем недопустимые символы на подчеркивание
+        let allowedChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+        let sanitized = name.unicodeScalars.map {
+            allowedChars.contains($0) ? Character($0) : "_"
+        }
+        return String(sanitized)
+    }
+    
     func exportToExcel() {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -160,52 +197,72 @@ class HistoryViewModel: ObservableObject {
         }
         
         isLoading = true
+        
+        // Сохраняем значения для использования в замыкании
+        let currentStats = self.stats
+        let currentSelectedGroup = self.selectedGroup
+        let currentEndDate = self.endDate
+        
         apiService.downloadFile(request: request) { [weak self] tempURL, response, error in
             DispatchQueue.main.async {
-                self?.isLoading = false
-            }
-            
-            if let error = error {
-                DispatchQueue.main.async {
-                    self?.errorMessage = error.localizedDescription
-                }
-                return
-            }
-            
-            guard let tempURL = tempURL else {
-                DispatchQueue.main.async {
-                    self?.errorMessage = "Не удалось загрузить файл"
-                }
-                return
-            }
-            
-            // Копируем файл в постоянное временное хранилище с правильным расширением
-            let fileName = "history_export.xlsx"
-            let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            
-            do {
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
-                try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                guard let self = self else { return }
                 
-                DispatchQueue.main.async {
-                    let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let rootVC = windowScene.windows.first?.rootViewController {
-                        
-                        if let popover = activityVC.popoverPresentationController {
-                            popover.sourceView = rootVC.view
-                            popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
-                            popover.permittedArrowDirections = []
-                        }
-                        
-                        rootVC.present(activityVC, animated: true)
-                    }
+                self.isLoading = false
+                
+                if let error = error {
+                    self.errorMessage = error.localizedDescription
+                    return
                 }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.errorMessage = "Ошибка при сохранении файла: \(error.localizedDescription)"
+                
+                guard let tempURL = tempURL else {
+                    self.errorMessage = "Не удалось загрузить файл"
+                    return
+                }
+                
+                // Формируем имя файла по шаблону: dd_mm_yyyy_название_группы_суммаобщая
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "dd_MM_yyyy"
+                let filterDateStr = dateFormatter.string(from: currentEndDate)
+                
+                // Получаем название группы (или "all" если не выбрана)
+                let groupName = currentSelectedGroup.isEmpty ? "all_groups" : self.sanitizeGroupName(currentSelectedGroup)
+                
+                // Получаем общую сумму и форматируем
+                let totalSum = currentStats?.totalSum ?? 0
+                let sumString = self.formatSumForFilename(totalSum)
+                
+                // Создаем имя файла - здесь уже не будет точек, только подчеркивания
+                let fileName = "\(filterDateStr)_\(groupName)_\(sumString).xlsx"
+                
+                // Дополнительная очистка имени файла (убираем возможные двойные подчеркивания)
+                let cleanFileName = fileName.replacingOccurrences(of: "__", with: "_")
+                
+                print("Export filename: \(cleanFileName)")
+                
+                let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(cleanFileName)
+                
+                do {
+                    if FileManager.default.fileExists(atPath: destinationURL.path) {
+                        try FileManager.default.removeItem(at: destinationURL)
+                    }
+                    try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                    
+                    DispatchQueue.main.async {
+                        let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootVC = windowScene.windows.first?.rootViewController {
+                            
+                            if let popover = activityVC.popoverPresentationController {
+                                popover.sourceView = rootVC.view
+                                popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                                popover.permittedArrowDirections = []
+                            }
+                            
+                            rootVC.present(activityVC, animated: true)
+                        }
+                    }
+                } catch {
+                    self.errorMessage = "Ошибка при сохранении файла: \(error.localizedDescription)"
                 }
             }
         }
