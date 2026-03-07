@@ -20,9 +20,9 @@ class TokenManager {
         print("TokenManager: Token saved for user: \(username)")
         
         // Отправляем уведомление об изменении статуса
-        DispatchQueue.main.async {
+        /*DispatchQueue.main.async {
             NotificationCenter.default.post(name: .authStateChanged, object: nil)
-        }
+        }*/
     }
     
     func getToken() -> String? {
@@ -45,9 +45,9 @@ class TokenManager {
         print("TokenManager: Token cleared")
         
         // Отправляем уведомление об изменении статуса
-        DispatchQueue.main.async {
+        /*DispatchQueue.main.async {
             NotificationCenter.default.post(name: .authStateChanged, object: nil)
-        }
+        }*/
     }
     
     var isAuthenticated: Bool {

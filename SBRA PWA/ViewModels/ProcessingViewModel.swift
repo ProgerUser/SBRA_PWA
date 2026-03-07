@@ -4,7 +4,7 @@ import Combine
 import UIKit
 import UniformTypeIdentifiers
 
-class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляем ToastCapable
+class ProcessingViewModel: ObservableObject, ToastCapable {
     @Published var processings: [AvailableProcessing] = []
     @Published var selectedProcessing: AvailableProcessing?
     @Published var isLoading = false
@@ -14,7 +14,7 @@ class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляе�
     @Published var uploadResult: UploadResult?
     @Published var availableGroups: [String] = []
     @Published var cardCount: Int?
-    @Published var toast: Toast? // Изменено с toastMessage
+    @Published var toast: Toast?
     @Published var showFilePicker = false
     
     let successPublisher = PassthroughSubject<Void, Never>()
@@ -67,6 +67,14 @@ class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляе�
         self.selectedFile = url
     }
     
+    func clearSelectedFile() {
+        // Удаляем временный файл
+        if let fileURL = selectedFile {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        selectedFile = nil
+    }
+    
     func uploadFile() {
         guard let fileURL = selectedFile else { return }
         
@@ -95,7 +103,8 @@ class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляе�
                         message: result.message,
                         cardCount: result.count
                     )
-                    self?.selectedFile = nil
+                    // Очищаем выбранный файл после успешной загрузки
+                    self?.clearSelectedFile()
                     self?.showSuccess("Файл успешно загружен")
                     self?.checkCardCount()
                 }

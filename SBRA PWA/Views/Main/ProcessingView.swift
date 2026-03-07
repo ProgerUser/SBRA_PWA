@@ -1,5 +1,6 @@
 // SBRA PWA/Views/Main/ProcessingView.swift
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ProcessingView: View {
     @StateObject private var viewModel = ProcessingViewModel()
@@ -47,15 +48,43 @@ struct ProcessingView: View {
             }
             .fileImporter(
                 isPresented: $viewModel.showFilePicker,
-                allowedContentTypes: [.excel],
+                allowedContentTypes: [.excel, .spreadsheet],
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
-                    withAnimation {
-                        viewModel.handleSelectedFile(url: url)
+                    
+                    // Получаем доступ к файлу
+                    let shouldStopAccessing = url.startAccessingSecurityScopedResource()
+                    defer {
+                        if shouldStopAccessing {
+                            url.stopAccessingSecurityScopedResource()
+                        }
                     }
+                    
+                    // Копируем файл во временную директорию
+                    do {
+                        let tempURL = FileManager.default.temporaryDirectory
+                            .appendingPathComponent(url.lastPathComponent)
+                        
+                        // Удаляем старый файл если есть
+                        if FileManager.default.fileExists(atPath: tempURL.path) {
+                            try FileManager.default.removeItem(at: tempURL)
+                        }
+                        
+                        // Копируем файл
+                        try FileManager.default.copyItem(at: url, to: tempURL)
+                        
+                        // Обрабатываем скопированный файл
+                        withAnimation {
+                            viewModel.handleSelectedFile(url: tempURL)
+                        }
+                    } catch {
+                        viewModel.errorMessage = "Ошибка при копировании файла: \(error.localizedDescription)"
+                        viewModel.showError("Ошибка при копировании файла")
+                    }
+                    
                 case .failure(let error):
                     viewModel.errorMessage = error.localizedDescription
                     viewModel.showError(error.localizedDescription)
@@ -108,6 +137,15 @@ struct ExcelUploadSection: View {
                         Text(viewModel.formatFileSize(file.fileSize))
                             .font(.caption)
                             .foregroundColor(Theme.textTertiary)
+                        
+                        Button(action: {
+                            withAnimation {
+                                viewModel.clearSelectedFile()
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(Theme.textTertiary)
+                        }
                     }
                     .padding()
                     .background(Theme.cardBackgroundSecondary)

@@ -3,7 +3,6 @@ import SwiftUI
 
 struct LoginView: View {
     @StateObject private var viewModel = AuthViewModel()
-    @State private var showingAlert = false
     @State private var animate = false
     @FocusState private var focusedField: Field?
     
@@ -14,7 +13,6 @@ struct LoginView: View {
     
     var body: some View {
         ZStack {
-            // Современный градиентный фон с анимацией
             MeshGradientBackground()
             
             ScrollView(showsIndicators: false) {
@@ -30,7 +28,7 @@ struct LoginView: View {
                             .animation(.spring(response: 0.6, dampingFraction: 0.6).repeatForever(autoreverses: true), value: animate)
                         
                         VStack(spacing: 8) {
-                            Text("Oracle Processor")
+                            Text("StreamPay")
                                 .font(.system(size: 36, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                             
@@ -47,7 +45,7 @@ struct LoginView: View {
                     
                     Spacer(minLength: 20)
                     
-                    // Карточка входа с эффектом стекла
+                    // Карточка входа
                     VStack(spacing: 25) {
                         VStack(alignment: .leading, spacing: 20) {
                             // Поле логина
@@ -173,6 +171,19 @@ struct LoginView: View {
                                 )
                                 .transition(.scale.combined(with: .opacity))
                         }
+                        
+                        // Кнопка сброса (если есть сохраненные данные)
+                        if BiometricManager.shared.isBiometricEnabled {
+                            Button(action: {
+                                viewModel.resetToLogin()
+                            }) {
+                                Text("Войти с другим логином")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .underline()
+                            }
+                            .padding(.top, 8)
+                        }
                     }
                     .padding(30)
                     .background(
@@ -216,10 +227,25 @@ struct LoginView: View {
         .onAppear {
             animate = true
         }
+        .alert("Включить биометрию?", isPresented: $viewModel.showBiometricPrompt) {
+            Button("Да", action: {
+                viewModel.enableBiometric()
+            })
+            Button("Нет", role: .cancel, action: {
+                viewModel.skipBiometric()
+            })
+        } message: {
+            Text("Хотите использовать \(BiometricManager.shared.biometricDisplayName) для быстрого входа в следующий раз?")
+        }
     }
     
     private func login() {
-        viewModel.login()
+        viewModel.login(completionHandler: { success in
+            if success {
+                // Дополнительные действия при успехе
+                print("Login successful")
+            }
+        })
     }
 }
 
@@ -229,7 +255,6 @@ struct MeshGradientBackground: View {
     
     var body: some View {
         ZStack {
-            // Базовый градиент
             LinearGradient(
                 colors: [
                     Color(hex: "0052FF"),
@@ -241,7 +266,6 @@ struct MeshGradientBackground: View {
             )
             .ignoresSafeArea()
             
-            // Анимированные круги
             Circle()
                 .fill(Color.blue.opacity(0.3))
                 .frame(width: 300, height: 300)
@@ -256,7 +280,6 @@ struct MeshGradientBackground: View {
                 .offset(x: animateGradient ? 150 : -150, y: animateGradient ? 300 : -300)
                 .animation(.easeInOut(duration: 12).repeatForever(autoreverses: true), value: animateGradient)
             
-            // Шумовая текстура
             Color.white.opacity(0.02)
                 .blendMode(.overlay)
         }
@@ -277,11 +300,5 @@ extension View {
             placeholder().opacity(shouldShow ? 1 : 0)
             self
         }
-    }
-}
-
-struct LoginView_Previews: PreviewProvider {
-    static var previews: some View {
-        LoginView()
     }
 }
