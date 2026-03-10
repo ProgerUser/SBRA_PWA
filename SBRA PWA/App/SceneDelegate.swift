@@ -41,16 +41,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     
     private func updateRootViewController(for window: UIWindow) {
-        let isAuthenticated = TokenManager.shared.isAuthenticated
-        let isBiometricEnabled = BiometricManager.shared.isBiometricEnabled
+        // ИСПОЛЬЗУЕМ ТОЛЬКО СУЩЕСТВУЮЩИЕ МЕТОДЫ
+        let isAuthenticated = TokenManager.shared.getToken() != nil
+        let hasSavedBiometrics = BiometricManager.shared.getSavedCredentials() != nil
+        
         let rootView: AnyView
         
         if isAuthenticated {
-            print("SceneDelegate: Authenticated, showing MainTabView")
+            print("SceneDelegate: Authenticated (\(TokenManager.shared.getUsername() ?? "unknown")), showing MainTabView")
             rootView = AnyView(MainTabView())
         } else {
-            if isBiometricEnabled {
-                print("SceneDelegate: Biometric enabled, showing BiometricAuthView")
+            if hasSavedBiometrics {
+                print("SceneDelegate: Saved biometrics found, showing BiometricAuthView")
                 rootView = AnyView(BiometricAuthView(onAuthenticated: {
                     DispatchQueue.main.async {
                         self.updateRootViewController(for: window)
@@ -72,7 +74,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func showCustomSplash(on window: UIWindow) {
         // Создаем view для заставки
         let splashView = UIView(frame: window.bounds)
-        splashView.backgroundColor = UIColor(red: 26/255, green: 26/255, blue: 28/255, alpha: 1) // Theme.background
+        splashView.backgroundColor = UIColor(red: 26/255, green: 26/255, blue: 28/255, alpha: 1)
         
         // Создаем контейнер для логотипа
         let containerView = UIView()
@@ -90,20 +92,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         imageContainerView.layer.masksToBounds = false
         containerView.addSubview(imageContainerView)
         
-        // Добавляем иконку SplashLogo (увеличена до 70% от ширины экрана)
+        // Добавляем иконку
         let imageView = UIImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = UIColor(red: 0/255, green: 82/255, blue: 255/255, alpha: 1) // Theme.primary
+        imageView.tintColor = UIColor(red: 0/255, green: 82/255, blue: 255/255, alpha: 1)
         imageView.layer.cornerRadius = 40
         imageView.layer.masksToBounds = true
-        imageView.backgroundColor = UIColor(red: 45/255, green: 45/255, blue: 50/255, alpha: 1) // Легкий фон для контраста
+        imageView.backgroundColor = UIColor(red: 45/255, green: 45/255, blue: 50/255, alpha: 1)
         
-        // Используем кастомную иконку из Assets
         if let customImage = UIImage(named: "SplashLogo") {
             imageView.image = customImage
         } else {
-            // Системная иконка как запасной вариант
             let config = UIImage.SymbolConfiguration(pointSize: 140, weight: .regular)
             imageView.image = UIImage(systemName: "externaldrive.fill", withConfiguration: config)
         }
@@ -115,7 +115,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.text = "StreamPay"
         titleLabel.font = UIFont.systemFont(ofSize: 40, weight: .bold)
-        titleLabel.textColor = UIColor(red: 26/255, green: 31/255, blue: 54/255, alpha: 1) // Theme.textPrimary
+        titleLabel.textColor = UIColor(red: 26/255, green: 31/255, blue: 54/255, alpha: 1)
         titleLabel.textAlignment = .center
         containerView.addSubview(titleLabel)
         
@@ -124,23 +124,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         versionLabel.translatesAutoresizingMaskIntoConstraints = false
         versionLabel.text = "Версия 1.0.0"
         versionLabel.font = UIFont.systemFont(ofSize: 20, weight: .regular)
-        versionLabel.textColor = UIColor(red: 155/255, green: 155/255, blue: 155/255, alpha: 1) // Theme.textSecondary
+        versionLabel.textColor = UIColor(red: 155/255, green: 155/255, blue: 155/255, alpha: 1)
         versionLabel.textAlignment = .center
         containerView.addSubview(versionLabel)
         
-        // Настройка констрейнтов
         NSLayoutConstraint.activate([
             containerView.centerXAnchor.constraint(equalTo: splashView.centerXAnchor),
             containerView.centerYAnchor.constraint(equalTo: splashView.centerYAnchor),
             containerView.widthAnchor.constraint(equalTo: splashView.widthAnchor),
             
-            // Контейнер для иконки
             imageContainerView.topAnchor.constraint(equalTo: containerView.topAnchor),
             imageContainerView.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
             imageContainerView.widthAnchor.constraint(equalTo: splashView.widthAnchor, multiplier: 0.7),
             imageContainerView.heightAnchor.constraint(equalTo: imageContainerView.widthAnchor),
             
-            // Иконка внутри контейнера
             imageView.topAnchor.constraint(equalTo: imageContainerView.topAnchor),
             imageView.leadingAnchor.constraint(equalTo: imageContainerView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: imageContainerView.trailingAnchor),
@@ -156,7 +153,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             versionLabel.bottomAnchor.constraint(lessThanOrEqualTo: containerView.bottomAnchor)
         ])
         
-        // Добавляем на окно
         window.addSubview(splashView)
         self.splashView = splashView
         
@@ -169,7 +165,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         versionLabel.transform = CGAffineTransform(translationX: 0, y: 40)
         
         // Анимация появления
-        UIView.animate(withDuration: 1.2, delay: 0.2, usingSpringWithDamping: 0.6, initialSpringVelocity: 0.5, options: [], animations: {
+        UIView.animate(withDuration: 1.0, delay: 0.1, usingSpringWithDamping: 0.6, initialSpringVelocity: 0.5, animations: {
             imageContainerView.transform = .identity
             imageContainerView.alpha = 1
             titleLabel.alpha = 1
@@ -178,18 +174,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             versionLabel.transform = .identity
         })
         
-        // Дополнительная анимация тени (пульсация)
+        // Анимация тени
         let shadowAnimation = CABasicAnimation(keyPath: "shadowRadius")
         shadowAnimation.fromValue = 20
-        shadowAnimation.toValue = 30
-        shadowAnimation.duration = 1.5
+        shadowAnimation.toValue = 28
+        shadowAnimation.duration = 1.2
         shadowAnimation.autoreverses = true
-        shadowAnimation.repeatCount = 2
+        shadowAnimation.repeatCount = 1
         imageContainerView.layer.add(shadowAnimation, forKey: "shadowPulse")
         
-        // Скрываем заставку через 3 секунды
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            UIView.animate(withDuration: 0.5, animations: {
+        // ИЗМЕНЕНО: Скрываем заставку через 1.5 секунды
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            UIView.animate(withDuration: 0.4, animations: {
                 splashView.alpha = 0
             }) { _ in
                 splashView.removeFromSuperview()

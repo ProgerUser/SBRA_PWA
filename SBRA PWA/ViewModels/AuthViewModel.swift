@@ -165,6 +165,7 @@ class AuthViewModel: ObservableObject {
         print("AuthViewModel: Logging out...")
         TokenManager.shared.clearToken()
         // Не очищаем биометрию при обычном выходе
+        BiometricManager.shared.resetAuthentication()  // <-- добавить эту строку
         
         isAuthenticated = false
         username = ""

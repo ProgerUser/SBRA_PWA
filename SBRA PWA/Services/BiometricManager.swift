@@ -39,6 +39,13 @@ class BiometricManager: ObservableObject {
         isBiometricEnabled = keychain.getBool(biometricEnabledKey) ?? false
     }
     
+    // BiometricManager.swift
+    func resetAuthentication() {
+        isAuthenticated = false
+        isAuthenticating = false
+        errorMessage = nil
+    }
+    
     func saveCredentials(username: String, password: String, enableBiometric: Bool) {
         if enableBiometric {
             keychain.set(username, forKey: savedUsernameKey)

@@ -1,9 +1,9 @@
 ================================================================================
 СБОРКА ВСЕ SWIFT ФАЙЛЫ
 ================================================================================
-📅 Дата: 2026-03-07 21:41:58
+📅 Дата: 2026-03-10 19:00:49
 📂 Путь проекта: /Users/saidpaculia/Desktop/SBRA_PWA
-📊 Всего файлов: 38
+📊 Всего файлов: 40
 ================================================================================
 
 
@@ -11,14 +11,13 @@
 FILE: SBRA PWA/App/AppDelegate.swift
 ================================================================================
 
+// SBRA PWA/App/AppDelegate.swift
 import UIKit
 import CoreData
 import UserNotifications
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
-    
-    var window: UIWindow?
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         
@@ -53,6 +52,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
         }
     }
+
     // MARK: UISceneSession Lifecycle
 
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
@@ -75,10 +75,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 }
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
-    func userNotificationCenter(_ center: UNUserNotificationCenter, 
-                                willPresent notification: UNNotification, 
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        // Показывать баннер и воспроизводить звук даже если приложение активно
         completionHandler([.banner, .sound])
     }
 }
@@ -98,52 +97,203 @@ import Combine
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     
     var window: UIWindow?
-    private var authViewModel = AuthViewModel()
+    private var splashView: UIView?
     private var cancellables = Set<AnyCancellable>()
     
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = (scene as? UIWindowScene) else { return }
         
-        // Создаем окно
         let window = UIWindow(windowScene: windowScene)
         window.backgroundColor = .systemBackground
         
-        self.window = window
-        
-        // Определяем начальный экран и показываем окно
+        // Определяем начальный экран
         updateRootViewController(for: window)
+        
+        self.window = window
         window.makeKeyAndVisible()
         
-        // Подписываемся на изменения статуса аутентификации
-        authViewModel.$isAuthenticated
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isAuthenticated in
-                guard let window = self?.window else { return }
-                print("SceneDelegate: Auth state changed to isAuthenticated=\(isAuthenticated)")
-                // Немедленно обновляем корневой контроллер
-                self?.updateRootViewController(for: window)
-            }
-            .store(in: &cancellables)
+        // Показываем кастомную заставку
+        showCustomSplash(on: window)
+        
+        // Подписываемся на уведомления об изменении статуса аутентификации
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAuthStateChange),
+            name: .authStateChanged,
+            object: nil
+        )
+    }
+    
+    @objc private func handleAuthStateChange() {
+        guard let window = window else { return }
+        DispatchQueue.main.async {
+            self.updateRootViewController(for: window)
+        }
     }
     
     private func updateRootViewController(for window: UIWindow) {
+        // ИСПРАВЛЕНО: Используем методы для проверки статуса
+        let tokenManager = TokenManager.shared
+        let biometricManager = BiometricManager.shared
+        
+        // Проверяем наличие токена
+        let isAuthenticated = tokenManager.getToken() != nil
+        
+        // Проверяем наличие сохраненных учетных данных для биометрии
+        let hasSavedCredentials = biometricManager.getSavedCredentials() != nil
+        
         let rootView: AnyView
         
-        if authViewModel.isAuthenticated {
-            print("SceneDelegate: Authenticated, showing MainTabView")
+        if isAuthenticated {
+            print("SceneDelegate: Authenticated (\(tokenManager.getUsername() ?? "unknown")), showing MainTabView")
             rootView = AnyView(MainTabView())
         } else {
-            print("SceneDelegate: Not authenticated, showing LoginView")
-            rootView = AnyView(LoginView())
+            if hasSavedCredentials {
+                print("SceneDelegate: Saved credentials found, showing BiometricAuthView")
+                rootView = AnyView(BiometricAuthView(onAuthenticated: {
+                    DispatchQueue.main.async {
+                        self.updateRootViewController(for: window)
+                    }
+                }))
+            } else {
+                print("SceneDelegate: Not authenticated, showing LoginView")
+                rootView = AnyView(LoginView())
+            }
         }
         
         let hostingController = UIHostingController(rootView: rootView)
         
-        // Анимированная смена корневого контроллера
         UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve) {
             window.rootViewController = hostingController
         }
     }
+    
+    private func showCustomSplash(on window: UIWindow) {
+        // Создаем view для заставки
+        let splashView = UIView(frame: window.bounds)
+        splashView.backgroundColor = UIColor(red: 26/255, green: 26/255, blue: 28/255, alpha: 1)
+        
+        // Создаем контейнер для логотипа
+        let containerView = UIView()
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        splashView.addSubview(containerView)
+        
+        // Контейнер для иконки со скругленными краями и тенью
+        let imageContainerView = UIView()
+        imageContainerView.translatesAutoresizingMaskIntoConstraints = false
+        imageContainerView.backgroundColor = .clear
+        imageContainerView.layer.shadowColor = UIColor(red: 0/255, green: 82/255, blue: 255/255, alpha: 0.5).cgColor
+        imageContainerView.layer.shadowOffset = CGSize(width: 0, height: 10)
+        imageContainerView.layer.shadowRadius = 20
+        imageContainerView.layer.shadowOpacity = 0.5
+        imageContainerView.layer.masksToBounds = false
+        containerView.addSubview(imageContainerView)
+        
+        // Добавляем иконку
+        let imageView = UIImageView()
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = UIColor(red: 0/255, green: 82/255, blue: 255/255, alpha: 1)
+        imageView.layer.cornerRadius = 40
+        imageView.layer.masksToBounds = true
+        imageView.backgroundColor = UIColor(red: 45/255, green: 45/255, blue: 50/255, alpha: 1)
+        
+        if let customImage = UIImage(named: "SplashLogo") {
+            imageView.image = customImage
+        } else {
+            let config = UIImage.SymbolConfiguration(pointSize: 140, weight: .regular)
+            imageView.image = UIImage(systemName: "externaldrive.fill", withConfiguration: config)
+        }
+        
+        imageContainerView.addSubview(imageView)
+        
+        // Добавляем название приложения
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = "StreamPay"
+        titleLabel.font = UIFont.systemFont(ofSize: 40, weight: .bold)
+        titleLabel.textColor = UIColor(red: 26/255, green: 31/255, blue: 54/255, alpha: 1)
+        titleLabel.textAlignment = .center
+        containerView.addSubview(titleLabel)
+        
+        // Добавляем версию
+        let versionLabel = UILabel()
+        versionLabel.translatesAutoresizingMaskIntoConstraints = false
+        versionLabel.text = "Версия 1.0.0"
+        versionLabel.font = UIFont.systemFont(ofSize: 20, weight: .regular)
+        versionLabel.textColor = UIColor(red: 155/255, green: 155/255, blue: 155/255, alpha: 1)
+        versionLabel.textAlignment = .center
+        containerView.addSubview(versionLabel)
+        
+        NSLayoutConstraint.activate([
+            containerView.centerXAnchor.constraint(equalTo: splashView.centerXAnchor),
+            containerView.centerYAnchor.constraint(equalTo: splashView.centerYAnchor),
+            containerView.widthAnchor.constraint(equalTo: splashView.widthAnchor),
+            
+            imageContainerView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            imageContainerView.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            imageContainerView.widthAnchor.constraint(equalTo: splashView.widthAnchor, multiplier: 0.7),
+            imageContainerView.heightAnchor.constraint(equalTo: imageContainerView.widthAnchor),
+            
+            imageView.topAnchor.constraint(equalTo: imageContainerView.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: imageContainerView.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: imageContainerView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: imageContainerView.bottomAnchor),
+            
+            titleLabel.topAnchor.constraint(equalTo: imageContainerView.bottomAnchor, constant: 50),
+            titleLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 20),
+            titleLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
+            
+            versionLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            versionLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 20),
+            versionLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
+            versionLabel.bottomAnchor.constraint(lessThanOrEqualTo: containerView.bottomAnchor)
+        ])
+        
+        window.addSubview(splashView)
+        self.splashView = splashView
+        
+        // Начальное состояние для анимации
+        imageContainerView.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
+        imageContainerView.alpha = 0
+        titleLabel.alpha = 0
+        versionLabel.alpha = 0
+        titleLabel.transform = CGAffineTransform(translationX: 0, y: 40)
+        versionLabel.transform = CGAffineTransform(translationX: 0, y: 40)
+        
+        // Анимация появления
+        UIView.animate(withDuration: 1.0, delay: 0.1, usingSpringWithDamping: 0.6, initialSpringVelocity: 0.5, animations: {
+            imageContainerView.transform = .identity
+            imageContainerView.alpha = 1
+            titleLabel.alpha = 1
+            versionLabel.alpha = 1
+            titleLabel.transform = .identity
+            versionLabel.transform = .identity
+        })
+        
+        // Анимация тени
+        let shadowAnimation = CABasicAnimation(keyPath: "shadowRadius")
+        shadowAnimation.fromValue = 20
+        shadowAnimation.toValue = 28
+        shadowAnimation.duration = 1.2
+        shadowAnimation.autoreverses = true
+        shadowAnimation.repeatCount = 1
+        imageContainerView.layer.add(shadowAnimation, forKey: "shadowPulse")
+        
+        // ИЗМЕНЕНО: Скрываем заставку через 1.5 секунды
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            UIView.animate(withDuration: 0.4, animations: {
+                splashView.alpha = 0
+            }) { _ in
+                splashView.removeFromSuperview()
+                self.splashView = nil
+            }
+        }
+    }
+}
+
+extension Notification.Name {
+    static let authStateChanged = Notification.Name("authStateChanged")
 }
 
 
@@ -1542,6 +1692,172 @@ class APIService: NSObject, URLSessionDelegate {
 [Кодировка: utf-8]
 
 ================================================================================
+FILE: SBRA PWA/Services/BiometricManager.swift
+================================================================================
+
+// SBRA PWA/Services/BiometricManager.swift
+import Foundation
+import LocalAuthentication
+import SwiftUI
+import Combine
+import KeychainSwift
+
+class BiometricManager: ObservableObject {
+    static let shared = BiometricManager()
+    
+    @Published var isAuthenticated = false
+    @Published var isAuthenticating = false
+    @Published var errorMessage: String?
+    @Published var biometricType: LABiometryType = .none
+    @Published var isBiometricEnabled = false
+    
+    private let keychain = KeychainSwift()
+    private let biometricEnabledKey = "biometric_enabled"
+    private let savedUsernameKey = "saved_username"
+    private let savedPasswordKey = "saved_password"
+    
+    private init() {
+        checkBiometricType()
+        checkBiometricEnabled()
+    }
+    
+    func checkBiometricType() {
+        let context = LAContext()
+        var error: NSError?
+        
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
+            biometricType = context.biometryType
+        } else {
+            biometricType = .none
+        }
+    }
+    
+    func checkBiometricEnabled() {
+        isBiometricEnabled = keychain.getBool(biometricEnabledKey) ?? false
+    }
+    
+    func saveCredentials(username: String, password: String, enableBiometric: Bool) {
+        if enableBiometric {
+            keychain.set(username, forKey: savedUsernameKey)
+            keychain.set(password, forKey: savedPasswordKey)
+            keychain.set(true, forKey: biometricEnabledKey)
+            isBiometricEnabled = true
+            print("BiometricManager: Credentials saved with biometric enabled")
+        } else {
+            keychain.delete(savedUsernameKey)
+            keychain.delete(savedPasswordKey)
+            keychain.set(false, forKey: biometricEnabledKey)
+            isBiometricEnabled = false
+            print("BiometricManager: Biometric disabled")
+        }
+    }
+    
+    func getSavedCredentials() -> (username: String, password: String)? {
+        guard let username = keychain.get(savedUsernameKey),
+              let password = keychain.get(savedPasswordKey) else {
+            return nil
+        }
+        return (username, password)
+    }
+    
+    func clearCredentials() {
+        keychain.delete(savedUsernameKey)
+        keychain.delete(savedPasswordKey)
+        keychain.set(false, forKey: biometricEnabledKey)
+        isBiometricEnabled = false
+        print("BiometricManager: Credentials cleared")
+    }
+    
+    func authenticateUser(completion: @escaping (Bool, String?) -> Void) {
+        // Предотвращаем множественные запросы
+        guard !isAuthenticating else {
+            completion(false, "Аутентификация уже выполняется")
+            return
+        }
+        
+        isAuthenticating = true
+        let context = LAContext()
+        var error: NSError?
+        
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
+            let reason = "Войдите с помощью биометрии для доступа к приложению"
+            
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
+                DispatchQueue.main.async {
+                    self.isAuthenticating = false
+                    if success {
+                        self.isAuthenticated = true
+                        completion(true, nil)
+                    } else {
+                        self.isAuthenticated = false
+                        if let error = error {
+                            completion(false, error.localizedDescription)
+                        } else {
+                            completion(false, "Аутентификация отменена")
+                        }
+                    }
+                }
+            }
+        } else {
+            // Если биометрия не доступна, используем пароль устройства
+            if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
+                let reason = "Введите пароль устройства для доступа к приложению"
+                
+                context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
+                    DispatchQueue.main.async {
+                        self.isAuthenticating = false
+                        if success {
+                            self.isAuthenticated = true
+                            completion(true, nil)
+                        } else {
+                            self.isAuthenticated = false
+                            if let error = error {
+                                completion(false, error.localizedDescription)
+                            } else {
+                                completion(false, "Аутентификация отменена")
+                            }
+                        }
+                    }
+                }
+            } else {
+                isAuthenticating = false
+                let message = error?.localizedDescription ?? "Биометрия не настроена на устройстве"
+                completion(false, message)
+            }
+        }
+    }
+    
+    var biometricIconName: String {
+        switch biometricType {
+        case .faceID:
+            return "faceid"
+        case .touchID:
+            return "touchid"
+        case .opticID:
+            return "opticid"
+        default:
+            return "lock.shield"
+        }
+    }
+    
+    var biometricDisplayName: String {
+        switch biometricType {
+        case .faceID:
+            return "Face ID"
+        case .touchID:
+            return "Touch ID"
+        case .opticID:
+            return "Optic ID"
+        default:
+            return "биометрию"
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
 FILE: SBRA PWA/Services/TokenManager.swift
 ================================================================================
 
@@ -1565,6 +1881,11 @@ class TokenManager {
         keychain.set(token, forKey: tokenKey)
         keychain.set(username, forKey: usernameKey)
         print("TokenManager: Token saved for user: \(username)")
+        
+        // Отправляем уведомление об изменении статуса
+        /*DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .authStateChanged, object: nil)
+        }*/
     }
     
     func getToken() -> String? {
@@ -1586,20 +1907,15 @@ class TokenManager {
         keychain.delete(usernameKey)
         print("TokenManager: Token cleared")
         
-        // Отправляем уведомление о выходе
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .userDidLogout, object: nil)
-        }
+        // Отправляем уведомление об изменении статуса
+        /*DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .authStateChanged, object: nil)
+        }*/
     }
     
     var isAuthenticated: Bool {
         return getToken() != nil
     }
-}
-
-// Добавляем notification name
-extension Notification.Name {
-    static let userDidLogout = Notification.Name("userDidLogout")
 }
 
 
@@ -2055,6 +2371,7 @@ FILE: SBRA PWA/ViewModels/AuthViewModel.swift
 // SBRA PWA/ViewModels/AuthViewModel.swift
 import Foundation
 import Combine
+import LocalAuthentication
 
 class AuthViewModel: ObservableObject {
     @Published var isAuthenticated = false
@@ -2062,16 +2379,30 @@ class AuthViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var username = ""
     @Published var password = ""
+    @Published var showBiometricPrompt = false
+    @Published var useBiometric = false
+    @Published var isBiometricLoginInProgress = false // Новый флаг
     
     private var cancellables = Set<AnyCancellable>()
     private let apiService = APIService.shared
     
     init() {
         // Проверяем, есть ли сохраненный токен
+        checkExistingSession()
+    }
+    
+    private func checkExistingSession() {
         isAuthenticated = TokenManager.shared.isAuthenticated
+        
         if isAuthenticated {
             username = TokenManager.shared.getUsername() ?? ""
             print("AuthViewModel: User is authenticated: \(username)")
+            
+            // Проверяем, включена ли биометрия
+            if BiometricManager.shared.isBiometricEnabled {
+                // Будет показан экран биометрии
+                print("AuthViewModel: Biometric is enabled, will show biometric screen")
+            }
         } else {
             print("AuthViewModel: No authenticated user")
         }
@@ -2085,20 +2416,12 @@ class AuthViewModel: ObservableObject {
             print("AuthViewModel: Received unauthorized notification, logging out...")
             self?.logout()
         }
-        // Подписка на уведомление о выходе
-        NotificationCenter.default.addObserver(
-            forName: .userDidLogout,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            print("AuthViewModel: Received userDidLogout notification")
-            self?.isAuthenticated = false
-        }
     }
     
-    func login() {
+    func login(completionHandler: @escaping (Bool) -> Void = { _ in }) {
         guard !username.isEmpty, !password.isEmpty else {
             errorMessage = "Заполните все поля"
+            completionHandler(false)
             return
         }
         
@@ -2115,31 +2438,109 @@ class AuthViewModel: ObservableObject {
                 case .failure(let error):
                     self?.errorMessage = error.localizedDescription
                     print("AuthViewModel: Login failed - \(error.localizedDescription)")
+                    completionHandler(false)
                 }
             } receiveValue: { [weak self] token in
-                TokenManager.shared.saveToken(token.accessToken, username: self?.username ?? "")
-                // Важно: устанавливаем на главном потоке
-                DispatchQueue.main.async {
-                    self?.isAuthenticated = true
-                    print("AuthViewModel: Successfully logged in as \(self?.username ?? "")")
+                guard let self = self else { return }
+                
+                TokenManager.shared.saveToken(token.accessToken, username: self.username)
+                
+                // Проверяем, нужно ли предложить включить биометрию
+                if !BiometricManager.shared.isBiometricEnabled &&
+                   BiometricManager.shared.biometricType != .none {
+                    self.showBiometricPrompt = true
+                    completionHandler(false) // Не завершаем, покажем диалог
+                } else {
+                    self.isAuthenticated = true
+                    NotificationCenter.default.post(name: .authStateChanged, object: nil)
+                    print("AuthViewModel: Successfully logged in as \(self.username)")
+                    completionHandler(true)
                 }
             }
             .store(in: &cancellables)
     }
     
+    func loginWithBiometrics(completionHandler: @escaping (Bool) -> Void = { _ in }) {
+        // Защита от множественных вызовов
+        guard !isBiometricLoginInProgress else {
+            print("AuthViewModel: Biometric login already in progress")
+            completionHandler(false)
+            return
+        }
+        
+        guard let credentials = BiometricManager.shared.getSavedCredentials() else {
+            errorMessage = "Нет сохраненных учетных данных"
+            completionHandler(false)
+            return
+        }
+        
+        isBiometricLoginInProgress = true
+        isLoading = true
+        errorMessage = nil
+        username = credentials.username
+        password = credentials.password
+        
+        apiService.login(username: credentials.username, password: credentials.password)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                self?.isBiometricLoginInProgress = false
+                switch completion {
+                case .finished:
+                    break
+                case .failure(let error):
+                    self?.errorMessage = error.localizedDescription
+                    print("AuthViewModel: Biometric login failed - \(error.localizedDescription)")
+                    completionHandler(false)
+                }
+            } receiveValue: { [weak self] token in
+                TokenManager.shared.saveToken(token.accessToken, username: credentials.username)
+                self?.isAuthenticated = true
+                self?.isBiometricLoginInProgress = false
+                NotificationCenter.default.post(name: .authStateChanged, object: nil)
+                print("AuthViewModel: Successfully logged in with biometrics as \(credentials.username)")
+                completionHandler(true)
+            }
+            .store(in: &cancellables)
+    }
+    
+    func enableBiometric() {
+        BiometricManager.shared.saveCredentials(
+            username: username,
+            password: password,
+            enableBiometric: true
+        )
+        showBiometricPrompt = false
+        isAuthenticated = true
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+    }
+    
+    func skipBiometric() {
+        showBiometricPrompt = false
+        isAuthenticated = true
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+    }
+    
+    func resetToLogin() {
+        TokenManager.shared.clearToken()
+        BiometricManager.shared.clearCredentials()
+        isAuthenticated = false
+        username = ""
+        password = ""
+        showBiometricPrompt = false
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+    }
+    
     func logout() {
         print("AuthViewModel: Logging out...")
         TokenManager.shared.clearToken()
+        // Не очищаем биометрию при обычном выходе
         
-        // Очищаем поля
+        isAuthenticated = false
         username = ""
         password = ""
-        
-        // Важно: устанавливаем на главном потоке
-        DispatchQueue.main.async { [weak self] in
-            self?.isAuthenticated = false
-            print("AuthViewModel: Logged out successfully, isAuthenticated set to false")
-        }
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+        print("AuthViewModel: Logged out successfully")
     }
 }
 
@@ -2528,6 +2929,7 @@ class CardActivationViewModel: ObservableObject, ToastCapable {
 FILE: SBRA PWA/ViewModels/HistoryViewModel.swift
 ================================================================================
 
+// SBRA PWA/ViewModels/HistoryViewModel.swift
 import Foundation
 import Combine
 import UIKit
@@ -2671,6 +3073,42 @@ class HistoryViewModel: ObservableObject {
         }
     }
     
+    // Функция для форматирования суммы в имя файла
+    private func formatSumForFilename(_ sum: Double) -> String {
+        // Разделяем на целую и дробную части
+        let integerPart = Int(sum)
+        let fractionalPart = Int(round((sum - Double(integerPart)) * 100))
+        
+        // Форматируем целую часть с подчеркиваниями каждые 3 разряда
+        let integerFormatter = NumberFormatter()
+        integerFormatter.numberStyle = .decimal
+        integerFormatter.groupingSeparator = "_"
+        integerFormatter.groupingSize = 3
+        integerFormatter.secondaryGroupingSize = 3
+        integerFormatter.maximumFractionDigits = 0
+        
+        let integerString = integerFormatter.string(from: NSNumber(value: integerPart)) ?? "\(integerPart)"
+        
+        // Добавляем дробную часть только если она не 0
+        if fractionalPart > 0 {
+            // Форматируем дробную часть с ведущим нулем если нужно (5 -> 05)
+            let fractionalString = String(format: "%02d", fractionalPart)
+            return "\(integerString)_\(fractionalString)"
+        } else {
+            return integerString
+        }
+    }
+    
+    // Функция для очистки имени группы от недопустимых символов
+    private func sanitizeGroupName(_ name: String) -> String {
+        // Заменяем недопустимые символы на подчеркивание
+        let allowedChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+        let sanitized = name.unicodeScalars.map {
+            allowedChars.contains($0) ? Character($0) : "_"
+        }
+        return String(sanitized)
+    }
+    
     func exportToExcel() {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -2690,52 +3128,72 @@ class HistoryViewModel: ObservableObject {
         }
         
         isLoading = true
+        
+        // Сохраняем значения для использования в замыкании
+        let currentStats = self.stats
+        let currentSelectedGroup = self.selectedGroup
+        let currentEndDate = self.endDate
+        
         apiService.downloadFile(request: request) { [weak self] tempURL, response, error in
             DispatchQueue.main.async {
-                self?.isLoading = false
-            }
-            
-            if let error = error {
-                DispatchQueue.main.async {
-                    self?.errorMessage = error.localizedDescription
-                }
-                return
-            }
-            
-            guard let tempURL = tempURL else {
-                DispatchQueue.main.async {
-                    self?.errorMessage = "Не удалось загрузить файл"
-                }
-                return
-            }
-            
-            // Копируем файл в постоянное временное хранилище с правильным расширением
-            let fileName = "history_export.xlsx"
-            let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            
-            do {
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
-                try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                guard let self = self else { return }
                 
-                DispatchQueue.main.async {
-                    let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let rootVC = windowScene.windows.first?.rootViewController {
-                        
-                        if let popover = activityVC.popoverPresentationController {
-                            popover.sourceView = rootVC.view
-                            popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
-                            popover.permittedArrowDirections = []
-                        }
-                        
-                        rootVC.present(activityVC, animated: true)
-                    }
+                self.isLoading = false
+                
+                if let error = error {
+                    self.errorMessage = error.localizedDescription
+                    return
                 }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.errorMessage = "Ошибка при сохранении файла: \(error.localizedDescription)"
+                
+                guard let tempURL = tempURL else {
+                    self.errorMessage = "Не удалось загрузить файл"
+                    return
+                }
+                
+                // Формируем имя файла по шаблону: dd_mm_yyyy_название_группы_суммаобщая
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "dd_MM_yyyy"
+                let filterDateStr = dateFormatter.string(from: currentEndDate)
+                
+                // Получаем название группы (или "all" если не выбрана)
+                let groupName = currentSelectedGroup.isEmpty ? "all_groups" : self.sanitizeGroupName(currentSelectedGroup)
+                
+                // Получаем общую сумму и форматируем
+                let totalSum = currentStats?.totalSum ?? 0
+                let sumString = self.formatSumForFilename(totalSum)
+                
+                // Создаем имя файла - здесь уже не будет точек, только подчеркивания
+                let fileName = "\(filterDateStr)_\(groupName)_\(sumString).xlsx"
+                
+                // Дополнительная очистка имени файла (убираем возможные двойные подчеркивания)
+                let cleanFileName = fileName.replacingOccurrences(of: "__", with: "_")
+                
+                print("Export filename: \(cleanFileName)")
+                
+                let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(cleanFileName)
+                
+                do {
+                    if FileManager.default.fileExists(atPath: destinationURL.path) {
+                        try FileManager.default.removeItem(at: destinationURL)
+                    }
+                    try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                    
+                    DispatchQueue.main.async {
+                        let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootVC = windowScene.windows.first?.rootViewController {
+                            
+                            if let popover = activityVC.popoverPresentationController {
+                                popover.sourceView = rootVC.view
+                                popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                                popover.permittedArrowDirections = []
+                            }
+                            
+                            rootVC.present(activityVC, animated: true)
+                        }
+                    }
+                } catch {
+                    self.errorMessage = "Ошибка при сохранении файла: \(error.localizedDescription)"
                 }
             }
         }
@@ -2804,7 +3262,7 @@ import Combine
 import UIKit
 import UniformTypeIdentifiers
 
-class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляем ToastCapable
+class ProcessingViewModel: ObservableObject, ToastCapable {
     @Published var processings: [AvailableProcessing] = []
     @Published var selectedProcessing: AvailableProcessing?
     @Published var isLoading = false
@@ -2814,7 +3272,7 @@ class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляе�
     @Published var uploadResult: UploadResult?
     @Published var availableGroups: [String] = []
     @Published var cardCount: Int?
-    @Published var toast: Toast? // Изменено с toastMessage
+    @Published var toast: Toast?
     @Published var showFilePicker = false
     
     let successPublisher = PassthroughSubject<Void, Never>()
@@ -2867,6 +3325,14 @@ class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляе�
         self.selectedFile = url
     }
     
+    func clearSelectedFile() {
+        // Удаляем временный файл
+        if let fileURL = selectedFile {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        selectedFile = nil
+    }
+    
     func uploadFile() {
         guard let fileURL = selectedFile else { return }
         
@@ -2895,7 +3361,8 @@ class ProcessingViewModel: ObservableObject, ToastCapable { // Добавляе�
                         message: result.message,
                         cardCount: result.count
                     )
-                    self?.selectedFile = nil
+                    // Очищаем выбранный файл после успешной загрузки
+                    self?.clearSelectedFile()
                     self?.showSuccess("Файл успешно загружен")
                     self?.checkCardCount()
                 }
@@ -3220,6 +3687,192 @@ class WhiteListViewModel: ObservableObject, ToastCapable { // Добавляем
 [Кодировка: utf-8]
 
 ================================================================================
+FILE: SBRA PWA/Views/Auth/BiometricAuthView.swift
+================================================================================
+
+// SBRA PWA/Views/Auth/BiometricAuthView.swift
+import SwiftUI
+
+struct BiometricAuthView: View {
+    @StateObject private var biometricManager = BiometricManager.shared
+    @StateObject private var authViewModel = AuthViewModel()
+    @State private var isAuthenticating = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var showLoginScreen = false
+    @State private var hasAttemptedAuth = false
+    
+    var onAuthenticated: () -> Void
+    
+    var body: some View {
+        ZStack {
+            if showLoginScreen {
+                LoginView()
+            } else {
+                // Градиентный фон
+                MeshGradientBackground()
+                
+                VStack(spacing: 30) {
+                    Spacer()
+                    
+                    // Иконка приложения
+                    Image(systemName: "externaldrive.fill")
+                        .font(.system(size: 100))
+                        .foregroundColor(.white)
+                        .shadow(color: .white.opacity(0.3), radius: 20, x: 0, y: 10)
+                    
+                    Text("StreamPay")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    // Карточка биометрии
+                    VStack(spacing: 25) {
+                        // Иконка биометрии
+                        Image(systemName: biometricManager.biometricIconName)
+                            .font(.system(size: 60))
+                            .foregroundColor(.white)
+                            .symbolRenderingMode(.multicolor)
+                        
+                        if let credentials = biometricManager.getSavedCredentials() {
+                            Text("Добро пожаловать, \(credentials.username)")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                        }
+                        
+                        Text("Для доступа к приложению используйте \(biometricManager.biometricDisplayName)")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        
+                        if biometricManager.isAuthenticating || isAuthenticating {
+                            VStack(spacing: 15) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(1.5)
+                                Text("Ожидание подтверждения...")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .padding()
+                        } else {
+                            Button(action: authenticate) {
+                                HStack {
+                                    Image(systemName: biometricManager.biometricIconName)
+                                    Text("Войти с \(biometricManager.biometricDisplayName)")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.white)
+                                .foregroundColor(Color(red: 0/255, green: 82/255, blue: 255/255))
+                                .cornerRadius(16)
+                                .shadow(color: .white.opacity(0.3), radius: 10, x: 0, y: 5)
+                            }
+                            
+                            Button(action: {
+                                showLoginScreen = true
+                            }) {
+                                Text("Войти с другим логином")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .underline()
+                            }
+                        }
+                    }
+                    .padding(30)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(.ultraThinMaterial)
+                                .opacity(0.9)
+                            
+                            RoundedRectangle(cornerRadius: 30)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        }
+                    )
+                    .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 20)
+                    .padding(.horizontal, 20)
+                    
+                    Spacer()
+                    
+                    // Подвал
+                    Text("Защищено \(biometricManager.biometricDisplayName)")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(.bottom, 30)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            // Автоматически запускаем аутентификацию только один раз
+            if !hasAttemptedAuth && !biometricManager.isAuthenticating {
+                hasAttemptedAuth = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    authenticate()
+                }
+            }
+        }
+        .onChange(of: biometricManager.isAuthenticated) { isAuthenticated in
+            if isAuthenticated {
+                // Автоматический вход с сохраненными данными
+                authViewModel.loginWithBiometrics(completionHandler: { success in
+                    if success {
+                        onAuthenticated()
+                    }
+                })
+            }
+        }
+        .alert("Ошибка аутентификации", isPresented: $showError) {
+            Button("Повторить", role: .cancel) {
+                authenticate()
+            }
+            Button("Войти с паролем", role: .destructive) {
+                showLoginScreen = true
+            }
+        } message: {
+            Text(errorMessage)
+        }
+    }
+    
+    private func authenticate() {
+        // Защита от множественных вызовов
+        guard !biometricManager.isAuthenticating && !isAuthenticating else {
+            print("BiometricAuthView: Already authenticating")
+            return
+        }
+        
+        isAuthenticating = true
+        
+        biometricManager.authenticateUser { success, error in
+            isAuthenticating = false
+            
+            if !success {
+                if let error = error {
+                    errorMessage = error
+                    showError = true
+                }
+            }
+            // При успехе сработает onChange
+        }
+    }
+}
+
+
+[Кодировка: utf-8]
+
+================================================================================
 FILE: SBRA PWA/Views/Auth/LoginView.swift
 ================================================================================
 
@@ -3228,7 +3881,6 @@ import SwiftUI
 
 struct LoginView: View {
     @StateObject private var viewModel = AuthViewModel()
-    @State private var showingAlert = false
     @State private var animate = false
     @FocusState private var focusedField: Field?
     
@@ -3239,7 +3891,6 @@ struct LoginView: View {
     
     var body: some View {
         ZStack {
-            // Современный градиентный фон с анимацией
             MeshGradientBackground()
             
             ScrollView(showsIndicators: false) {
@@ -3255,7 +3906,7 @@ struct LoginView: View {
                             .animation(.spring(response: 0.6, dampingFraction: 0.6).repeatForever(autoreverses: true), value: animate)
                         
                         VStack(spacing: 8) {
-                            Text("Oracle Processor")
+                            Text("StreamPay")
                                 .font(.system(size: 36, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                             
@@ -3272,7 +3923,7 @@ struct LoginView: View {
                     
                     Spacer(minLength: 20)
                     
-                    // Карточка входа с эффектом стекла
+                    // Карточка входа
                     VStack(spacing: 25) {
                         VStack(alignment: .leading, spacing: 20) {
                             // Поле логина
@@ -3398,6 +4049,19 @@ struct LoginView: View {
                                 )
                                 .transition(.scale.combined(with: .opacity))
                         }
+                        
+                        // Кнопка сброса (если есть сохраненные данные)
+                        if BiometricManager.shared.isBiometricEnabled {
+                            Button(action: {
+                                viewModel.resetToLogin()
+                            }) {
+                                Text("Войти с другим логином")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .underline()
+                            }
+                            .padding(.top, 8)
+                        }
                     }
                     .padding(30)
                     .background(
@@ -3441,10 +4105,25 @@ struct LoginView: View {
         .onAppear {
             animate = true
         }
+        .alert("Включить биометрию?", isPresented: $viewModel.showBiometricPrompt) {
+            Button("Да", action: {
+                viewModel.enableBiometric()
+            })
+            Button("Нет", role: .cancel, action: {
+                viewModel.skipBiometric()
+            })
+        } message: {
+            Text("Хотите использовать \(BiometricManager.shared.biometricDisplayName) для быстрого входа в следующий раз?")
+        }
     }
     
     private func login() {
-        viewModel.login()
+        viewModel.login(completionHandler: { success in
+            if success {
+                // Дополнительные действия при успехе
+                print("Login successful")
+            }
+        })
     }
 }
 
@@ -3454,7 +4133,6 @@ struct MeshGradientBackground: View {
     
     var body: some View {
         ZStack {
-            // Базовый градиент
             LinearGradient(
                 colors: [
                     Color(hex: "0052FF"),
@@ -3466,7 +4144,6 @@ struct MeshGradientBackground: View {
             )
             .ignoresSafeArea()
             
-            // Анимированные круги
             Circle()
                 .fill(Color.blue.opacity(0.3))
                 .frame(width: 300, height: 300)
@@ -3481,7 +4158,6 @@ struct MeshGradientBackground: View {
                 .offset(x: animateGradient ? 150 : -150, y: animateGradient ? 300 : -300)
                 .animation(.easeInOut(duration: 12).repeatForever(autoreverses: true), value: animateGradient)
             
-            // Шумовая текстура
             Color.white.opacity(0.02)
                 .blendMode(.overlay)
         }
@@ -3502,12 +4178,6 @@ extension View {
             placeholder().opacity(shouldShow ? 1 : 0)
             self
         }
-    }
-}
-
-struct LoginView_Previews: PreviewProvider {
-    static var previews: some View {
-        LoginView()
     }
 }
 
@@ -5699,6 +6369,7 @@ FILE: SBRA PWA/Views/Main/ProcessingView.swift
 
 // SBRA PWA/Views/Main/ProcessingView.swift
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ProcessingView: View {
     @StateObject private var viewModel = ProcessingViewModel()
@@ -5746,15 +6417,43 @@ struct ProcessingView: View {
             }
             .fileImporter(
                 isPresented: $viewModel.showFilePicker,
-                allowedContentTypes: [.excel],
+                allowedContentTypes: [.excel, .spreadsheet],
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
-                    withAnimation {
-                        viewModel.handleSelectedFile(url: url)
+                    
+                    // Получаем доступ к файлу
+                    let shouldStopAccessing = url.startAccessingSecurityScopedResource()
+                    defer {
+                        if shouldStopAccessing {
+                            url.stopAccessingSecurityScopedResource()
+                        }
                     }
+                    
+                    // Копируем файл во временную директорию
+                    do {
+                        let tempURL = FileManager.default.temporaryDirectory
+                            .appendingPathComponent(url.lastPathComponent)
+                        
+                        // Удаляем старый файл если есть
+                        if FileManager.default.fileExists(atPath: tempURL.path) {
+                            try FileManager.default.removeItem(at: tempURL)
+                        }
+                        
+                        // Копируем файл
+                        try FileManager.default.copyItem(at: url, to: tempURL)
+                        
+                        // Обрабатываем скопированный файл
+                        withAnimation {
+                            viewModel.handleSelectedFile(url: tempURL)
+                        }
+                    } catch {
+                        viewModel.errorMessage = "Ошибка при копировании файла: \(error.localizedDescription)"
+                        viewModel.showError("Ошибка при копировании файла")
+                    }
+                    
                 case .failure(let error):
                     viewModel.errorMessage = error.localizedDescription
                     viewModel.showError(error.localizedDescription)
@@ -5807,6 +6506,15 @@ struct ExcelUploadSection: View {
                         Text(viewModel.formatFileSize(file.fileSize))
                             .font(.caption)
                             .foregroundColor(Theme.textTertiary)
+                        
+                        Button(action: {
+                            withAnimation {
+                                viewModel.clearSelectedFile()
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(Theme.textTertiary)
+                        }
                     }
                     .padding()
                     .background(Theme.cardBackgroundSecondary)
@@ -6463,9 +7171,9 @@ struct FilterButton: View {
 ================================================================================
 ИТОГИ СБОРКИ
 ================================================================================
-✅ Успешно прочитано: 38
+✅ Успешно прочитано: 40
 ❌ Ошибок чтения: 0
-📊 Всего обработано: 38
+📊 Всего обработано: 40
 
-🕒 Дата завершения: 2026-03-07 21:41:58
+🕒 Дата завершения: 2026-03-10 19:00:49
 ================================================================================

@@ -1,7 +1,7 @@
 ================================================================================
 СБОРКА ВСЕ SWIFT ФАЙЛЫ
 ================================================================================
-📅 Дата: 2026-03-08 01:03:37
+📅 Дата: 2026-03-10 19:10:36
 📂 Путь проекта: /Users/saidpaculia/Desktop/SBRA_PWA
 📊 Всего файлов: 40
 ================================================================================
@@ -99,52 +99,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var splashView: UIView?
     private var cancellables = Set<AnyCancellable>()
-    private var isActive = false // Флаг для предотвращения множественных обновлений
     
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = (scene as? UIWindowScene) else { return }
         
-        // Создаем окно
         let window = UIWindow(windowScene: windowScene)
         window.backgroundColor = .systemBackground
-        
-        // Подписываемся на изменения статуса биометрии
-        BiometricManager.shared.$isAuthenticated
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isBiometricAuthenticated in
-                // Обновляем только если не в процессе обновления
-                if self?.isActive == false {
-                    self?.isActive = true
-                    self?.updateRootViewController(for: window)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        self?.isActive = false
-                    }
-                }
-            }
-            .store(in: &cancellables)
-        
-        // Подписываемся на уведомления об изменении статуса аутентификации
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAuthStateChange),
-            name: .authStateChanged,
-            object: nil
-        )
-        
-        // Подписываемся на уведомление о выходе из приложения
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAppWillResignActive),
-            name: UIApplication.willResignActiveNotification,
-            object: nil
-        )
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAppDidBecomeActive),
-            name: UIApplication.didBecomeActiveNotification,
-            object: nil
-        )
         
         // Определяем начальный экран
         updateRootViewController(for: window)
@@ -154,6 +114,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Показываем кастомную заставку
         showCustomSplash(on: window)
+        
+        // Подписываемся на уведомления об изменении статуса аутентификации
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAuthStateChange),
+            name: .authStateChanged,
+            object: nil
+        )
     }
     
     @objc private func handleAuthStateChange() {
@@ -163,69 +131,32 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
     
-    @objc private func handleAppWillResignActive() {
-        // При сворачивании приложения сбрасываем биометрию
-        print("SceneDelegate: App will resign active, biometric reset")
-        BiometricManager.shared.isAuthenticated = false
-    }
-    
-    @objc private func handleAppDidBecomeActive() {
-        // При возвращении в приложение
-        print("SceneDelegate: App did become active")
-        guard let window = window else { return }
-        
-        // Проверяем, авторизован ли пользователь
-        if TokenManager.shared.isAuthenticated {
-            // Показываем экран биометрии без автоматического запуска
-            DispatchQueue.main.async {
-                self.showBiometricAuthScreen(on: window)
-            }
-        }
-    }
-    
-    private func showBiometricAuthScreen(on window: UIWindow) {
-        let rootView = AnyView(
-            BiometricAuthView(onAuthenticated: { [weak self] in
-                // После успешной биометрии обновляем UI
-                self?.updateRootViewController(for: window)
-            }, autoStart: false) // Отключаем автоматический запуск
-        )
-        
-        let hostingController = UIHostingController(rootView: rootView)
-        
-        UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve) {
-            window.rootViewController = hostingController
-        }
-    }
-    
     private func updateRootViewController(for window: UIWindow) {
-        let isAuthenticated = TokenManager.shared.isAuthenticated
-        let isBiometricAuthenticated = BiometricManager.shared.isAuthenticated
+        // ИСПОЛЬЗУЕМ ТОЛЬКО СУЩЕСТВУЮЩИЕ МЕТОДЫ
+        let isAuthenticated = TokenManager.shared.getToken() != nil
+        let hasSavedBiometrics = BiometricManager.shared.getSavedCredentials() != nil
+        
         let rootView: AnyView
         
         if isAuthenticated {
-            if isBiometricAuthenticated {
-                print("SceneDelegate: Authenticated with biometrics, showing MainTabView")
-                rootView = AnyView(MainTabView())
-            } else {
-                print("SceneDelegate: Need biometric authentication")
-                rootView = AnyView(
-                    BiometricAuthView(
-                        onAuthenticated: { [weak self] in
-                            self?.updateRootViewController(for: window)
-                        },
-                        autoStart: true // Включаем автоматический запуск только при первом показе
-                    )
-                )
-            }
+            print("SceneDelegate: Authenticated (\(TokenManager.shared.getUsername() ?? "unknown")), showing MainTabView")
+            rootView = AnyView(MainTabView())
         } else {
-            print("SceneDelegate: Not authenticated, showing LoginView")
-            rootView = AnyView(LoginView())
+            if hasSavedBiometrics {
+                print("SceneDelegate: Saved biometrics found, showing BiometricAuthView")
+                rootView = AnyView(BiometricAuthView(onAuthenticated: {
+                    DispatchQueue.main.async {
+                        self.updateRootViewController(for: window)
+                    }
+                }))
+            } else {
+                print("SceneDelegate: Not authenticated, showing LoginView")
+                rootView = AnyView(LoginView())
+            }
         }
         
         let hostingController = UIHostingController(rootView: rootView)
         
-        // Анимированная смена корневого контроллера
         UIView.transition(with: window, duration: 0.3, options: .transitionCrossDissolve) {
             window.rootViewController = hostingController
         }
@@ -234,7 +165,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func showCustomSplash(on window: UIWindow) {
         // Создаем view для заставки
         let splashView = UIView(frame: window.bounds)
-        splashView.backgroundColor = UIColor(red: 26/255, green: 26/255, blue: 28/255, alpha: 1) // Theme.background
+        splashView.backgroundColor = UIColor(red: 26/255, green: 26/255, blue: 28/255, alpha: 1)
         
         // Создаем контейнер для логотипа
         let containerView = UIView()
@@ -252,20 +183,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         imageContainerView.layer.masksToBounds = false
         containerView.addSubview(imageContainerView)
         
-        // Добавляем иконку SplashLogo (увеличена до 70% от ширины экрана)
+        // Добавляем иконку
         let imageView = UIImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = UIColor(red: 0/255, green: 82/255, blue: 255/255, alpha: 1) // Theme.primary
+        imageView.tintColor = UIColor(red: 0/255, green: 82/255, blue: 255/255, alpha: 1)
         imageView.layer.cornerRadius = 40
         imageView.layer.masksToBounds = true
-        imageView.backgroundColor = UIColor(red: 45/255, green: 45/255, blue: 50/255, alpha: 1) // Легкий фон для контраста
+        imageView.backgroundColor = UIColor(red: 45/255, green: 45/255, blue: 50/255, alpha: 1)
         
-        // Используем кастомную иконку из Assets
         if let customImage = UIImage(named: "SplashLogo") {
             imageView.image = customImage
         } else {
-            // Системная иконка как запасной вариант
             let config = UIImage.SymbolConfiguration(pointSize: 140, weight: .regular)
             imageView.image = UIImage(systemName: "externaldrive.fill", withConfiguration: config)
         }
@@ -277,7 +206,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.text = "StreamPay"
         titleLabel.font = UIFont.systemFont(ofSize: 40, weight: .bold)
-        titleLabel.textColor = UIColor(red: 26/255, green: 31/255, blue: 54/255, alpha: 1) // Theme.textPrimary
+        titleLabel.textColor = UIColor(red: 26/255, green: 31/255, blue: 54/255, alpha: 1)
         titleLabel.textAlignment = .center
         containerView.addSubview(titleLabel)
         
@@ -286,23 +215,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         versionLabel.translatesAutoresizingMaskIntoConstraints = false
         versionLabel.text = "Версия 1.0.0"
         versionLabel.font = UIFont.systemFont(ofSize: 20, weight: .regular)
-        versionLabel.textColor = UIColor(red: 155/255, green: 155/255, blue: 155/255, alpha: 1) // Theme.textSecondary
+        versionLabel.textColor = UIColor(red: 155/255, green: 155/255, blue: 155/255, alpha: 1)
         versionLabel.textAlignment = .center
         containerView.addSubview(versionLabel)
         
-        // Настройка констрейнтов - иконка теперь 70% от ширины экрана
         NSLayoutConstraint.activate([
             containerView.centerXAnchor.constraint(equalTo: splashView.centerXAnchor),
             containerView.centerYAnchor.constraint(equalTo: splashView.centerYAnchor),
             containerView.widthAnchor.constraint(equalTo: splashView.widthAnchor),
             
-            // Контейнер для иконки
             imageContainerView.topAnchor.constraint(equalTo: containerView.topAnchor),
             imageContainerView.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
             imageContainerView.widthAnchor.constraint(equalTo: splashView.widthAnchor, multiplier: 0.7),
             imageContainerView.heightAnchor.constraint(equalTo: imageContainerView.widthAnchor),
             
-            // Иконка внутри контейнера
             imageView.topAnchor.constraint(equalTo: imageContainerView.topAnchor),
             imageView.leadingAnchor.constraint(equalTo: imageContainerView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: imageContainerView.trailingAnchor),
@@ -318,7 +244,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             versionLabel.bottomAnchor.constraint(lessThanOrEqualTo: containerView.bottomAnchor)
         ])
         
-        // Добавляем на окно
         window.addSubview(splashView)
         self.splashView = splashView
         
@@ -331,7 +256,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         versionLabel.transform = CGAffineTransform(translationX: 0, y: 40)
         
         // Анимация появления
-        UIView.animate(withDuration: 1.2, delay: 0.2, usingSpringWithDamping: 0.6, initialSpringVelocity: 0.5, options: [], animations: {
+        UIView.animate(withDuration: 1.0, delay: 0.1, usingSpringWithDamping: 0.6, initialSpringVelocity: 0.5, animations: {
             imageContainerView.transform = .identity
             imageContainerView.alpha = 1
             titleLabel.alpha = 1
@@ -340,18 +265,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             versionLabel.transform = .identity
         })
         
-        // Дополнительная анимация тени (пульсация)
+        // Анимация тени
         let shadowAnimation = CABasicAnimation(keyPath: "shadowRadius")
         shadowAnimation.fromValue = 20
-        shadowAnimation.toValue = 30
-        shadowAnimation.duration = 1.5
+        shadowAnimation.toValue = 28
+        shadowAnimation.duration = 1.2
         shadowAnimation.autoreverses = true
-        shadowAnimation.repeatCount = 2
+        shadowAnimation.repeatCount = 1
         imageContainerView.layer.add(shadowAnimation, forKey: "shadowPulse")
         
-        // Скрываем заставку через 3 секунды
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            UIView.animate(withDuration: 0.5, animations: {
+        // ИЗМЕНЕНО: Скрываем заставку через 1.5 секунды
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            UIView.animate(withDuration: 0.4, animations: {
                 splashView.alpha = 0
             }) { _ in
                 splashView.removeFromSuperview()
@@ -361,7 +286,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
-// Добавляем notification name
 extension Notification.Name {
     static let authStateChanged = Notification.Name("authStateChanged")
 }
@@ -1769,17 +1693,26 @@ FILE: SBRA PWA/Services/BiometricManager.swift
 import Foundation
 import LocalAuthentication
 import SwiftUI
-import Combine // Добавляем недостающий импорт
+import Combine
+import KeychainSwift
 
 class BiometricManager: ObservableObject {
     static let shared = BiometricManager()
     
     @Published var isAuthenticated = false
+    @Published var isAuthenticating = false
     @Published var errorMessage: String?
     @Published var biometricType: LABiometryType = .none
+    @Published var isBiometricEnabled = false
+    
+    private let keychain = KeychainSwift()
+    private let biometricEnabledKey = "biometric_enabled"
+    private let savedUsernameKey = "saved_username"
+    private let savedPasswordKey = "saved_password"
     
     private init() {
         checkBiometricType()
+        checkBiometricEnabled()
     }
     
     func checkBiometricType() {
@@ -1793,16 +1726,59 @@ class BiometricManager: ObservableObject {
         }
     }
     
+    func checkBiometricEnabled() {
+        isBiometricEnabled = keychain.getBool(biometricEnabledKey) ?? false
+    }
+    
+    func saveCredentials(username: String, password: String, enableBiometric: Bool) {
+        if enableBiometric {
+            keychain.set(username, forKey: savedUsernameKey)
+            keychain.set(password, forKey: savedPasswordKey)
+            keychain.set(true, forKey: biometricEnabledKey)
+            isBiometricEnabled = true
+            print("BiometricManager: Credentials saved with biometric enabled")
+        } else {
+            keychain.delete(savedUsernameKey)
+            keychain.delete(savedPasswordKey)
+            keychain.set(false, forKey: biometricEnabledKey)
+            isBiometricEnabled = false
+            print("BiometricManager: Biometric disabled")
+        }
+    }
+    
+    func getSavedCredentials() -> (username: String, password: String)? {
+        guard let username = keychain.get(savedUsernameKey),
+              let password = keychain.get(savedPasswordKey) else {
+            return nil
+        }
+        return (username, password)
+    }
+    
+    func clearCredentials() {
+        keychain.delete(savedUsernameKey)
+        keychain.delete(savedPasswordKey)
+        keychain.set(false, forKey: biometricEnabledKey)
+        isBiometricEnabled = false
+        print("BiometricManager: Credentials cleared")
+    }
+    
     func authenticateUser(completion: @escaping (Bool, String?) -> Void) {
+        // Предотвращаем множественные запросы
+        guard !isAuthenticating else {
+            completion(false, "Аутентификация уже выполняется")
+            return
+        }
+        
+        isAuthenticating = true
         let context = LAContext()
         var error: NSError?
         
-        // Проверяем, доступна ли биометрия
         if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
-            let reason = "Для доступа к приложению требуется аутентификация"
+            let reason = "Войдите с помощью биометрии для доступа к приложению"
             
             context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
                 DispatchQueue.main.async {
+                    self.isAuthenticating = false
                     if success {
                         self.isAuthenticated = true
                         completion(true, nil)
@@ -1811,7 +1787,7 @@ class BiometricManager: ObservableObject {
                         if let error = error {
                             completion(false, error.localizedDescription)
                         } else {
-                            completion(false, "Неизвестная ошибка")
+                            completion(false, "Аутентификация отменена")
                         }
                     }
                 }
@@ -1819,10 +1795,11 @@ class BiometricManager: ObservableObject {
         } else {
             // Если биометрия не доступна, используем пароль устройства
             if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
-                let reason = "Для доступа к приложению требуется аутентификация"
+                let reason = "Введите пароль устройства для доступа к приложению"
                 
                 context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
                     DispatchQueue.main.async {
+                        self.isAuthenticating = false
                         if success {
                             self.isAuthenticated = true
                             completion(true, nil)
@@ -1837,7 +1814,7 @@ class BiometricManager: ObservableObject {
                     }
                 }
             } else {
-                // Ничего не доступно
+                isAuthenticating = false
                 let message = error?.localizedDescription ?? "Биометрия не настроена на устройстве"
                 completion(false, message)
             }
@@ -1866,7 +1843,7 @@ class BiometricManager: ObservableObject {
         case .opticID:
             return "Optic ID"
         default:
-            return "Биометрия"
+            return "биометрию"
         }
     }
 }
@@ -1900,9 +1877,9 @@ class TokenManager {
         print("TokenManager: Token saved for user: \(username)")
         
         // Отправляем уведомление об изменении статуса
-        DispatchQueue.main.async {
+        /*DispatchQueue.main.async {
             NotificationCenter.default.post(name: .authStateChanged, object: nil)
-        }
+        }*/
     }
     
     func getToken() -> String? {
@@ -1925,9 +1902,9 @@ class TokenManager {
         print("TokenManager: Token cleared")
         
         // Отправляем уведомление об изменении статуса
-        DispatchQueue.main.async {
+        /*DispatchQueue.main.async {
             NotificationCenter.default.post(name: .authStateChanged, object: nil)
-        }
+        }*/
     }
     
     var isAuthenticated: Bool {
@@ -2388,6 +2365,7 @@ FILE: SBRA PWA/ViewModels/AuthViewModel.swift
 // SBRA PWA/ViewModels/AuthViewModel.swift
 import Foundation
 import Combine
+import LocalAuthentication
 
 class AuthViewModel: ObservableObject {
     @Published var isAuthenticated = false
@@ -2395,16 +2373,30 @@ class AuthViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var username = ""
     @Published var password = ""
+    @Published var showBiometricPrompt = false
+    @Published var useBiometric = false
+    @Published var isBiometricLoginInProgress = false // Новый флаг
     
     private var cancellables = Set<AnyCancellable>()
     private let apiService = APIService.shared
     
     init() {
         // Проверяем, есть ли сохраненный токен
+        checkExistingSession()
+    }
+    
+    private func checkExistingSession() {
         isAuthenticated = TokenManager.shared.isAuthenticated
+        
         if isAuthenticated {
             username = TokenManager.shared.getUsername() ?? ""
             print("AuthViewModel: User is authenticated: \(username)")
+            
+            // Проверяем, включена ли биометрия
+            if BiometricManager.shared.isBiometricEnabled {
+                // Будет показан экран биометрии
+                print("AuthViewModel: Biometric is enabled, will show biometric screen")
+            }
         } else {
             print("AuthViewModel: No authenticated user")
         }
@@ -2420,9 +2412,10 @@ class AuthViewModel: ObservableObject {
         }
     }
     
-    func login() {
+    func login(completionHandler: @escaping (Bool) -> Void = { _ in }) {
         guard !username.isEmpty, !password.isEmpty else {
             errorMessage = "Заполните все поля"
+            completionHandler(false)
             return
         }
         
@@ -2439,34 +2432,109 @@ class AuthViewModel: ObservableObject {
                 case .failure(let error):
                     self?.errorMessage = error.localizedDescription
                     print("AuthViewModel: Login failed - \(error.localizedDescription)")
+                    completionHandler(false)
                 }
             } receiveValue: { [weak self] token in
-                TokenManager.shared.saveToken(token.accessToken, username: self?.username ?? "")
+                guard let self = self else { return }
                 
-                // Обновляем состояние и отправляем уведомление
-                DispatchQueue.main.async {
-                    self?.isAuthenticated = true
+                TokenManager.shared.saveToken(token.accessToken, username: self.username)
+                
+                // Проверяем, нужно ли предложить включить биометрию
+                if !BiometricManager.shared.isBiometricEnabled &&
+                   BiometricManager.shared.biometricType != .none {
+                    self.showBiometricPrompt = true
+                    completionHandler(false) // Не завершаем, покажем диалог
+                } else {
+                    self.isAuthenticated = true
                     NotificationCenter.default.post(name: .authStateChanged, object: nil)
-                    print("AuthViewModel: Successfully logged in as \(self?.username ?? "")")
+                    print("AuthViewModel: Successfully logged in as \(self.username)")
+                    completionHandler(true)
                 }
             }
             .store(in: &cancellables)
     }
     
+    func loginWithBiometrics(completionHandler: @escaping (Bool) -> Void = { _ in }) {
+        // Защита от множественных вызовов
+        guard !isBiometricLoginInProgress else {
+            print("AuthViewModel: Biometric login already in progress")
+            completionHandler(false)
+            return
+        }
+        
+        guard let credentials = BiometricManager.shared.getSavedCredentials() else {
+            errorMessage = "Нет сохраненных учетных данных"
+            completionHandler(false)
+            return
+        }
+        
+        isBiometricLoginInProgress = true
+        isLoading = true
+        errorMessage = nil
+        username = credentials.username
+        password = credentials.password
+        
+        apiService.login(username: credentials.username, password: credentials.password)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] completion in
+                self?.isLoading = false
+                self?.isBiometricLoginInProgress = false
+                switch completion {
+                case .finished:
+                    break
+                case .failure(let error):
+                    self?.errorMessage = error.localizedDescription
+                    print("AuthViewModel: Biometric login failed - \(error.localizedDescription)")
+                    completionHandler(false)
+                }
+            } receiveValue: { [weak self] token in
+                TokenManager.shared.saveToken(token.accessToken, username: credentials.username)
+                self?.isAuthenticated = true
+                self?.isBiometricLoginInProgress = false
+                NotificationCenter.default.post(name: .authStateChanged, object: nil)
+                print("AuthViewModel: Successfully logged in with biometrics as \(credentials.username)")
+                completionHandler(true)
+            }
+            .store(in: &cancellables)
+    }
+    
+    func enableBiometric() {
+        BiometricManager.shared.saveCredentials(
+            username: username,
+            password: password,
+            enableBiometric: true
+        )
+        showBiometricPrompt = false
+        isAuthenticated = true
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+    }
+    
+    func skipBiometric() {
+        showBiometricPrompt = false
+        isAuthenticated = true
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+    }
+    
+    func resetToLogin() {
+        TokenManager.shared.clearToken()
+        BiometricManager.shared.clearCredentials()
+        isAuthenticated = false
+        username = ""
+        password = ""
+        showBiometricPrompt = false
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+    }
+    
     func logout() {
         print("AuthViewModel: Logging out...")
         TokenManager.shared.clearToken()
+        // Не очищаем биометрию при обычном выходе
         
-        // Очищаем поля
+        isAuthenticated = false
         username = ""
         password = ""
-        
-        // Обновляем состояние и отправляем уведомление
-        DispatchQueue.main.async { [weak self] in
-            self?.isAuthenticated = false
-            NotificationCenter.default.post(name: .authStateChanged, object: nil)
-            print("AuthViewModel: Logged out successfully")
-        }
+        NotificationCenter.default.post(name: .authStateChanged, object: nil)
+        print("AuthViewModel: Logged out successfully")
     }
 }
 
@@ -3621,134 +3689,151 @@ import SwiftUI
 
 struct BiometricAuthView: View {
     @StateObject private var biometricManager = BiometricManager.shared
+    @StateObject private var authViewModel = AuthViewModel()
     @State private var isAuthenticating = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showLoginScreen = false
+    @State private var hasAttemptedAuth = false
     
     var onAuthenticated: () -> Void
-    var autoStart: Bool // Новый параметр для управления автозапуском
-    
-    init(onAuthenticated: @escaping () -> Void, autoStart: Bool = true) {
-        self.onAuthenticated = onAuthenticated
-        self.autoStart = autoStart
-    }
     
     var body: some View {
         ZStack {
-            // Градиентный фон
-            MeshGradientBackground()
-            
-            VStack(spacing: 30) {
-                Spacer()
+            if showLoginScreen {
+                LoginView()
+            } else {
+                // Градиентный фон
+                MeshGradientBackground()
                 
-                // Иконка приложения
-                Image(systemName: "externaldrive.fill")
-                    .font(.system(size: 100))
-                    .foregroundColor(.white)
-                    .shadow(color: .white.opacity(0.3), radius: 20, x: 0, y: 10)
-                
-                Text("StreamPay")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                // Карточка биометрии
-                VStack(spacing: 25) {
-                    // Иконка биометрии
-                    Image(systemName: biometricManager.biometricIconName)
-                        .font(.system(size: 60))
-                        .foregroundColor(.white)
-                        .symbolRenderingMode(.multicolor)
+                VStack(spacing: 30) {
+                    Spacer()
                     
-                    Text("Требуется аутентификация")
-                        .font(.headline)
+                    // Иконка приложения
+                    Image(systemName: "externaldrive.fill")
+                        .font(.system(size: 100))
+                        .foregroundColor(.white)
+                        .shadow(color: .white.opacity(0.3), radius: 20, x: 0, y: 10)
+                    
+                    Text("StreamPay")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
                         .foregroundColor(.white)
                     
-                    Text("Для доступа к приложению необходимо подтвердить личность с помощью \(biometricManager.biometricDisplayName)")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                    Spacer()
                     
-                    if isAuthenticating {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(1.5)
-                            .padding()
-                    } else {
-                        Button(action: authenticate) {
-                            HStack {
-                                Image(systemName: biometricManager.biometricIconName)
-                                Text("Войти с \(biometricManager.biometricDisplayName)")
-                                    .fontWeight(.semibold)
+                    // Карточка биометрии
+                    VStack(spacing: 25) {
+                        // Иконка биометрии
+                        Image(systemName: biometricManager.biometricIconName)
+                            .font(.system(size: 60))
+                            .foregroundColor(.white)
+                            .symbolRenderingMode(.multicolor)
+                        
+                        if let credentials = biometricManager.getSavedCredentials() {
+                            Text("Добро пожаловать, \(credentials.username)")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                        }
+                        
+                        Text("Для доступа к приложению используйте \(biometricManager.biometricDisplayName)")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        
+                        if biometricManager.isAuthenticating || isAuthenticating {
+                            VStack(spacing: 15) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(1.5)
+                                Text("Ожидание подтверждения...")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
                             }
-                            .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.white)
-                            .foregroundColor(Color(red: 0/255, green: 82/255, blue: 255/255))
-                            .cornerRadius(16)
-                            .shadow(color: .white.opacity(0.3), radius: 10, x: 0, y: 5)
-                        }
-                        
-                        Button(action: {
-                            // Выход из аккаунта
-                            TokenManager.shared.clearToken()
-                            onAuthenticated()
-                        }) {
-                            Text("Выйти из аккаунта")
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.7))
+                        } else {
+                            Button(action: authenticate) {
+                                HStack {
+                                    Image(systemName: biometricManager.biometricIconName)
+                                    Text("Войти с \(biometricManager.biometricDisplayName)")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.white)
+                                .foregroundColor(Color(red: 0/255, green: 82/255, blue: 255/255))
+                                .cornerRadius(16)
+                                .shadow(color: .white.opacity(0.3), radius: 10, x: 0, y: 5)
+                            }
+                            
+                            Button(action: {
+                                showLoginScreen = true
+                            }) {
+                                Text("Войти с другим логином")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .underline()
+                            }
                         }
                     }
+                    .padding(30)
+                    .background(
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(.ultraThinMaterial)
+                                .opacity(0.9)
+                            
+                            RoundedRectangle(cornerRadius: 30)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.5), .white.opacity(0.1)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        }
+                    )
+                    .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 20)
+                    .padding(.horizontal, 20)
+                    
+                    Spacer()
+                    
+                    // Подвал
+                    Text("Защищено \(biometricManager.biometricDisplayName)")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(.bottom, 30)
                 }
-                .padding(30)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 30)
-                            .fill(.ultraThinMaterial)
-                            .opacity(0.9)
-                        
-                        RoundedRectangle(cornerRadius: 30)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.white.opacity(0.5), .white.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    }
-                )
-                .shadow(color: .black.opacity(0.2), radius: 30, x: 0, y: 20)
-                .padding(.horizontal, 20)
-                
-                Spacer()
-                
-                // Подвал
-                Text("Защищено \(biometricManager.biometricDisplayName)")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.6))
-                    .padding(.bottom, 30)
             }
         }
         .ignoresSafeArea()
         .onAppear {
-            // Автоматически запускаем аутентификацию только если autoStart = true
-            if autoStart {
+            // Автоматически запускаем аутентификацию только один раз
+            if !hasAttemptedAuth && !biometricManager.isAuthenticating {
+                hasAttemptedAuth = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     authenticate()
                 }
+            }
+        }
+        .onChange(of: biometricManager.isAuthenticated) { isAuthenticated in
+            if isAuthenticated {
+                // Автоматический вход с сохраненными данными
+                authViewModel.loginWithBiometrics(completionHandler: { success in
+                    if success {
+                        onAuthenticated()
+                    }
+                })
             }
         }
         .alert("Ошибка аутентификации", isPresented: $showError) {
             Button("Повторить", role: .cancel) {
                 authenticate()
             }
-            Button("Выйти", role: .destructive) {
-                TokenManager.shared.clearToken()
-                onAuthenticated()
+            Button("Войти с паролем", role: .destructive) {
+                showLoginScreen = true
             }
         } message: {
             Text(errorMessage)
@@ -3757,24 +3842,23 @@ struct BiometricAuthView: View {
     
     private func authenticate() {
         // Защита от множественных вызовов
-        guard !isAuthenticating else { return }
+        guard !biometricManager.isAuthenticating && !isAuthenticating else {
+            print("BiometricAuthView: Already authenticating")
+            return
+        }
         
         isAuthenticating = true
         
         biometricManager.authenticateUser { success, error in
             isAuthenticating = false
             
-            if success {
-                // Небольшая задержка для плавности
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    onAuthenticated()
-                }
-            } else {
+            if !success {
                 if let error = error {
                     errorMessage = error
                     showError = true
                 }
             }
+            // При успехе сработает onChange
         }
     }
 }
@@ -3791,7 +3875,6 @@ import SwiftUI
 
 struct LoginView: View {
     @StateObject private var viewModel = AuthViewModel()
-    @State private var showingAlert = false
     @State private var animate = false
     @FocusState private var focusedField: Field?
     
@@ -3802,7 +3885,6 @@ struct LoginView: View {
     
     var body: some View {
         ZStack {
-            // Современный градиентный фон с анимацией
             MeshGradientBackground()
             
             ScrollView(showsIndicators: false) {
@@ -3835,7 +3917,7 @@ struct LoginView: View {
                     
                     Spacer(minLength: 20)
                     
-                    // Карточка входа с эффектом стекла
+                    // Карточка входа
                     VStack(spacing: 25) {
                         VStack(alignment: .leading, spacing: 20) {
                             // Поле логина
@@ -3961,6 +4043,19 @@ struct LoginView: View {
                                 )
                                 .transition(.scale.combined(with: .opacity))
                         }
+                        
+                        // Кнопка сброса (если есть сохраненные данные)
+                        if BiometricManager.shared.isBiometricEnabled {
+                            Button(action: {
+                                viewModel.resetToLogin()
+                            }) {
+                                Text("Войти с другим логином")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .underline()
+                            }
+                            .padding(.top, 8)
+                        }
                     }
                     .padding(30)
                     .background(
@@ -4004,10 +4099,25 @@ struct LoginView: View {
         .onAppear {
             animate = true
         }
+        .alert("Включить биометрию?", isPresented: $viewModel.showBiometricPrompt) {
+            Button("Да", action: {
+                viewModel.enableBiometric()
+            })
+            Button("Нет", role: .cancel, action: {
+                viewModel.skipBiometric()
+            })
+        } message: {
+            Text("Хотите использовать \(BiometricManager.shared.biometricDisplayName) для быстрого входа в следующий раз?")
+        }
     }
     
     private func login() {
-        viewModel.login()
+        viewModel.login(completionHandler: { success in
+            if success {
+                // Дополнительные действия при успехе
+                print("Login successful")
+            }
+        })
     }
 }
 
@@ -4017,7 +4127,6 @@ struct MeshGradientBackground: View {
     
     var body: some View {
         ZStack {
-            // Базовый градиент
             LinearGradient(
                 colors: [
                     Color(hex: "0052FF"),
@@ -4029,7 +4138,6 @@ struct MeshGradientBackground: View {
             )
             .ignoresSafeArea()
             
-            // Анимированные круги
             Circle()
                 .fill(Color.blue.opacity(0.3))
                 .frame(width: 300, height: 300)
@@ -4044,7 +4152,6 @@ struct MeshGradientBackground: View {
                 .offset(x: animateGradient ? 150 : -150, y: animateGradient ? 300 : -300)
                 .animation(.easeInOut(duration: 12).repeatForever(autoreverses: true), value: animateGradient)
             
-            // Шумовая текстура
             Color.white.opacity(0.02)
                 .blendMode(.overlay)
         }
@@ -4065,12 +4172,6 @@ extension View {
             placeholder().opacity(shouldShow ? 1 : 0)
             self
         }
-    }
-}
-
-struct LoginView_Previews: PreviewProvider {
-    static var previews: some View {
-        LoginView()
     }
 }
 
@@ -7068,5 +7169,5 @@ struct FilterButton: View {
 ❌ Ошибок чтения: 0
 📊 Всего обработано: 40
 
-🕒 Дата завершения: 2026-03-08 01:03:37
+🕒 Дата завершения: 2026-03-10 19:10:36
 ================================================================================
